@@ -1,14 +1,5 @@
 import { Readable } from "stream";
 import { google, type drive_v3 } from "googleapis";
-import { getGoogleTokens, getOAuth2Client, setGoogleTokensCookie } from "./oauth";
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`${name} is not configured`);
-  }
-  return value;
-}
 
 export function getRootFolderId(): string {
   return process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || "1SBQEAA1BhMo-VdEkKmYP4K4PESV5HugW";
@@ -29,39 +20,87 @@ export function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-async function getDriveClient(): Promise<drive_v3.Drive> {
-  const tokens = await getGoogleTokens();
-  if (!tokens || (!tokens.refresh_token && !tokens.access_token)) {
-    throw new Error("Google Drive is not connected. Please click 'Connect Google Drive' to authorize your Google account.");
+function getServiceAccountAuth() {
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL;
+  let privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY;
+
+  if (!email || !privateKey) {
+    const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    if (rawKey) {
+      try {
+        const decoded = rawKey.startsWith("{") ? rawKey : Buffer.from(rawKey, "base64").toString("utf8");
+        const parsed = JSON.parse(decoded) as { client_email?: string; private_key?: string };
+        if (parsed.client_email && parsed.private_key) {
+          return new google.auth.JWT({
+            email: parsed.client_email,
+            key: parsed.private_key.replace(/\\n/g, "\n"),
+            scopes: ["https://www.googleapis.com/auth/drive"],
+          });
+        }
+      } catch {
+        // ignore JSON parse error
+      }
+    }
+    return null;
   }
 
-  const oauth2Client = getOAuth2Client();
+  return new google.auth.JWT({
+    email,
+    key: privateKey.replace(/\\n/g, "\n"),
+    scopes: ["https://www.googleapis.com/auth/drive"],
+  });
+}
+
+function getAdminOAuth2Auth() {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+
+  if (!clientId || !clientSecret || !refreshToken) {
+    return null;
+  }
+
+  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
   oauth2Client.setCredentials({
-    access_token: tokens.access_token ?? undefined,
-    refresh_token: tokens.refresh_token ?? undefined,
-    expiry_date: tokens.expiry_date ?? undefined,
+    refresh_token: refreshToken,
   });
+  return oauth2Client;
+}
 
-  oauth2Client.on("tokens", (newTokens) => {
-    const merged = {
-      ...tokens,
-      ...newTokens,
-    };
-    void setGoogleTokensCookie(merged);
-  });
+export function isDriveConfigured(): boolean {
+  return Boolean(getServiceAccountAuth() || getAdminOAuth2Auth());
+}
 
-  return google.drive({ version: "v3", auth: oauth2Client });
+function getServerDriveAuth() {
+  const saAuth = getServiceAccountAuth();
+  if (saAuth) return saAuth;
+
+  const oauthAuth = getAdminOAuth2Auth();
+  if (oauthAuth) return oauthAuth;
+
+  throw new Error(
+    "Google Drive storage is not configured on the server. " +
+      "Please configure GOOGLE_REFRESH_TOKEN (with GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET) or " +
+      "GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY in server environment variables.",
+  );
+}
+
+function getDriveClient(): drive_v3.Drive {
+  const auth = getServerDriveAuth();
+  return google.drive({ version: "v3", auth });
 }
 
 async function driveRequest<T>(fn: (drive: drive_v3.Drive) => Promise<T>): Promise<T> {
-  const drive = await getDriveClient();
+  const drive = getDriveClient();
   try {
     return await fn(drive);
   } catch (error: unknown) {
     if (error && typeof error === "object" && "message" in error) {
       const msg = String((error as { message?: string }).message);
       if (msg.includes("invalid_grant") || msg.includes("Token has been expired or revoked")) {
-        throw new Error("Your Google Drive connection has expired. Please reconnect Google Drive.");
+        throw new Error(
+          "Server Google Drive authorization failed or expired. Please verify GOOGLE_REFRESH_TOKEN or Service Account credentials in server environment variables.",
+        );
       }
     }
     throw error;

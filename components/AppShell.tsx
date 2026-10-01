@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 const links = [
   { href: "/upload", label: "Upload" },
@@ -14,29 +14,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [driveStatus, setDriveStatus] = useState<{
-    configured: boolean;
-    connected: boolean;
-    email?: string | null;
-  } | null>(null);
-
-  useEffect(() => {
-    fetch("/api/auth/google/status")
-      .then((r) => r.json())
-      .then((data) => setDriveStatus(data))
-      .catch(() => setDriveStatus({ configured: false, connected: false }));
-  }, [pathname]);
 
   async function logout() {
     setLoggingOut(true);
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
-    router.refresh();
-  }
-
-  async function disconnectDrive() {
-    await fetch("/api/auth/google/disconnect", { method: "POST" });
-    setDriveStatus({ configured: true, connected: false });
     router.refresh();
   }
 
@@ -61,27 +43,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {link.label}
             </Link>
           ))}
-
-          <div className="pt-2 border-t border-[#d5e4ea]">
-            {driveStatus?.connected ? (
-              <div className="flex items-center justify-between px-2 py-1 text-xs text-muted">
-                <span className="flex items-center gap-1.5 font-medium text-[#1f6f8b]">
-                  <span className="h-2 w-2 rounded-full bg-[#1f6f8b]" />
-                  Drive Connected
-                </span>
-                <button onClick={disconnectDrive} className="text-xs text-muted hover:underline">
-                  Disconnect
-                </button>
-              </div>
-            ) : (
-              <a
-                href={`/api/auth/google/connect?returnTo=${encodeURIComponent(pathname)}`}
-                className="btn-secondary w-full text-center text-sm py-2"
-              >
-                Connect Google Drive
-              </a>
-            )}
-          </div>
 
           <button className="w-full rounded-2xl px-4 py-3 text-left text-ink hover:bg-canvas" onClick={logout} disabled={loggingOut}>
             {loggingOut ? "Signing out…" : "Logout"}
@@ -112,39 +73,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </nav>
 
             <div className="mt-auto space-y-4">
-              <div className="rounded-2xl border border-[#d5e4ea] bg-canvas p-3 text-xs">
-                <p className="font-semibold text-ink mb-1">Google Drive Storage</p>
-                {driveStatus?.connected ? (
-                  <div>
-                    <div className="flex items-center gap-1.5 text-[#1f6f8b] font-medium">
-                      <span className="h-2 w-2 rounded-full bg-[#1f6f8b]" />
-                      Connected
-                    </div>
-                    {driveStatus.email ? (
-                      <p className="mt-1 truncate text-muted" title={driveStatus.email}>
-                        {driveStatus.email}
-                      </p>
-                    ) : null}
-                    <button
-                      onClick={disconnectDrive}
-                      className="mt-2 text-[11px] text-muted hover:text-ink underline block"
-                    >
-                      Disconnect Drive
-                    </button>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-muted mb-2">Connect your Google account to enable storage.</p>
-                    <a
-                      href={`/api/auth/google/connect?returnTo=${encodeURIComponent(pathname)}`}
-                      className="btn-primary w-full text-center text-xs py-2 block"
-                    >
-                      Connect Google Drive
-                    </a>
-                  </div>
-                )}
-              </div>
-
               <button
                 className="w-full rounded-2xl px-4 py-3 text-left text-muted hover:bg-canvas hover:text-ink transition"
                 onClick={logout}

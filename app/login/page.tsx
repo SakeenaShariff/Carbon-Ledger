@@ -60,14 +60,6 @@ export default function LoginPage() {
           <div className="mb-4">
             <Alert tone="error">
               <p>{error}</p>
-              {error.includes("Google Drive") ? (
-                <a
-                  href="/api/auth/google/connect?returnTo=/login"
-                  className="mt-3 inline-block rounded-xl bg-primary px-4 py-2 text-xs font-medium text-white hover:brightness-105"
-                >
-                  Connect Google Drive Now
-                </a>
-              ) : null}
             </Alert>
           </div>
         ) : null}

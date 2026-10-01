@@ -183,7 +183,7 @@ export default function DashboardPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-heading text-4xl text-ink">Dashboard</h1>
-          <p className="mt-2 text-muted">Figures come from processed Google Drive datasets only.</p>
+          <p className="mt-2 text-muted">Figures come from verified company datasets.</p>
         </div>
         <div className="flex rounded-2xl bg-white p-1 shadow-card">
           {(["overview", "scope1", "scope2"] as View[]).map((item) => (

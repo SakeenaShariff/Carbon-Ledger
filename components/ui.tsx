@@ -20,7 +20,7 @@ export function AuthCard({
         <div>
           <h2 className="font-heading text-5xl leading-tight">Calm, accurate Scope 1 and Scope 2 reporting.</h2>
           <p className="mt-6 max-w-md text-lg text-white/80">
-            Stationary and mobile combustion, plus purchased electricity. Your files stay in Google Drive.
+            Stationary and mobile combustion, plus purchased electricity. Clean and automated greenhouse gas accounting.
           </p>
         </div>
         <p className="text-sm text-white/70">Ocean Breeze</p>
