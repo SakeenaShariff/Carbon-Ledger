@@ -47,6 +47,11 @@ export type EmissionFactor = {
   publisher: string;
   document: string;
   year: number;
+  activity?: string;
+  ghgGas?: string;
+  region?: string;
+  notes?: string;
+  reference?: string;
 };
 
 export type Scope1Record = {

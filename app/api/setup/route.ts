@@ -7,10 +7,7 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    const { session, company } = await requireCompany();
-    if (company.setupComplete) {
-      return NextResponse.json({ error: "Company setup is already complete." }, { status: 400 });
-    }
+    const { session } = await requireCompany();
 
     const body = (await request.json()) as {
       name?: string;

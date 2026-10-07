@@ -35,12 +35,12 @@ export async function POST(request: Request) {
 
     const parsed =
       scope === "Scope1"
-        ? parseScope1Excel(buffer, {
+        ? await parseScope1Excel(buffer, {
             reportingYear,
             facilityId,
             facilityName: facility.name,
           })
-        : parseScope2Excel(buffer, {
+        : await parseScope2Excel(buffer, {
             reportingYear,
             facilityId,
             facilityName: facility.name,

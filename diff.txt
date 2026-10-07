@@ -1,0 +1,2043 @@
+﻿diff --git a/app/api/auth/login/route.ts b/app/api/auth/login/route.ts
+index 6b6c5ee..03537cb 100644
+--- a/app/api/auth/login/route.ts
++++ b/app/api/auth/login/route.ts
+@@ -30,7 +30,7 @@ export async function POST(request: Request) {
+ 
+     return NextResponse.json({
+       ok: true,
+-      redirectTo: setupComplete ? "/dashboard" : "/setup",
++      redirectTo: "/setup",
+     });
+   } catch (error) {
+     const message = error instanceof Error ? error.message : "Login failed";
+diff --git a/app/api/auth/signup/route.ts b/app/api/auth/signup/route.ts
+index a4fb10b..7d9595a 100644
+--- a/app/api/auth/signup/route.ts
++++ b/app/api/auth/signup/route.ts
+@@ -1,6 +1,5 @@
+ import { NextResponse } from "next/server";
+ import { createCompanyStub } from "@/lib/company";
+-import { setSessionCookie } from "@/lib/session";
+ import { createUser, emailExists } from "@/lib/users";
+ 
+ export const runtime = "nodejs";
+@@ -22,15 +21,9 @@ export async function POST(request: Request) {
+     }
+ 
+     const company = await createCompanyStub();
+-    const user = await createUser(email, password, company.id);
+-    await setSessionCookie({
+-      userId: user.id,
+-      email: user.email,
+-      companyId: company.id,
+-      setupComplete: false,
+-    });
++    await createUser(email, password, company.id);
+ 
+-    return NextResponse.json({ ok: true, redirectTo: "/setup" });
++    return NextResponse.json({ ok: true, redirectTo: "/login" });
+   } catch (error) {
+     const message = error instanceof Error ? error.message : "Signup failed";
+     const status = message.includes("already exists") ? 409 : 500;
+diff --git a/app/api/setup/route.ts b/app/api/setup/route.ts
+index 73d6300..6b84d94 100644
+--- a/app/api/setup/route.ts
++++ b/app/api/setup/route.ts
+@@ -7,10 +7,7 @@ export const runtime = "nodejs";
+ 
+ export async function POST(request: Request) {
+   try {
+-    const { session, company } = await requireCompany();
+-    if (company.setupComplete) {
+-      return NextResponse.json({ error: "Company setup is already complete." }, { status: 400 });
+-    }
++    const { session } = await requireCompany();
+ 
+     const body = (await request.json()) as {
+       name?: string;
+diff --git a/app/api/upload/route.ts b/app/api/upload/route.ts
+index f341d72..1f3db95 100644
+--- a/app/api/upload/route.ts
++++ b/app/api/upload/route.ts
+@@ -35,12 +35,12 @@ export async function POST(request: Request) {
+ 
+     const parsed =
+       scope === "Scope1"
+-        ? parseScope1Excel(buffer, {
++        ? await parseScope1Excel(buffer, {
+             reportingYear,
+             facilityId,
+             facilityName: facility.name,
+           })
+-        : parseScope2Excel(buffer, {
++        : await parseScope2Excel(buffer, {
+             reportingYear,
+             facilityId,
+             facilityName: facility.name,
+diff --git a/app/forgot-password/page.tsx b/app/forgot-password/page.tsx
+index 333f592..94d7612 100644
+--- a/app/forgot-password/page.tsx
++++ b/app/forgot-password/page.tsx
+@@ -44,7 +44,7 @@ export default function ForgotPasswordPage() {
+     >
+       <form onSubmit={onSubmit}>
+         <Field label="Email">
+-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
++          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required suppressHydrationWarning />
+         </Field>
+         {error ? <div className="mb-4"><Alert tone="error">{error}</Alert></div> : null}
+         {message ? <div className="mb-4"><Alert tone="success">{message}</Alert></div> : null}
+diff --git a/app/login/page.tsx b/app/login/page.tsx
+index c11f74c..b11f3d5 100644
+--- a/app/login/page.tsx
++++ b/app/login/page.tsx
+@@ -9,6 +9,7 @@ export default function LoginPage() {
+   const router = useRouter();
+   const [email, setEmail] = useState("");
+   const [password, setPassword] = useState("");
++  const [showPassword, setShowPassword] = useState(false);
+   const [error, setError] = useState("");
+   const [loading, setLoading] = useState(false);
+ 
+@@ -27,7 +28,7 @@ export default function LoginPage() {
+       setError(data.error ?? "Unable to sign in");
+       return;
+     }
+-    router.push(data.redirectTo ?? "/dashboard");
++    router.push(data.redirectTo ?? "/setup");
+     router.refresh();
+   }
+ 
+@@ -46,10 +47,59 @@ export default function LoginPage() {
+     >
+       <form onSubmit={onSubmit}>
+         <Field label="Email">
+-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
++          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required suppressHydrationWarning />
+         </Field>
+         <Field label="Password">
+-          <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
++          <div className="relative flex items-center">
++            <input
++              className="input pr-11"
++              type={showPassword ? "text" : "password"}
++              value={password}
++              onChange={(e) => setPassword(e.target.value)}
++              required
++              suppressHydrationWarning
++            />
++            <button
++              type="button"
++              onClick={() => setShowPassword((prev) => !prev)}
++              className="absolute right-3 inline-flex items-center justify-center rounded-lg p-1 text-muted transition hover:text-ink focus:outline-none"
++              aria-label={showPassword ? "Hide password" : "Show password"}
++              title={showPassword ? "Hide password" : "Show password"}
++            >
++              {showPassword ? (
++                <svg
++                  xmlns="http://www.w3.org/2000/svg"
++                  fill="none"
++                  viewBox="0 0 24 24"
++                  strokeWidth={1.75}
++                  stroke="currentColor"
++                  className="h-5 w-5"
++                >
++                  <path
++                    strokeLinecap="round"
++                    strokeLinejoin="round"
++                    d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
++                  />
++                </svg>
++              ) : (
++                <svg
++                  xmlns="http://www.w3.org/2000/svg"
++                  fill="none"
++                  viewBox="0 0 24 24"
++                  strokeWidth={1.75}
++                  stroke="currentColor"
++                  className="h-5 w-5"
++                >
++                  <path
++                    strokeLinecap="round"
++                    strokeLinejoin="round"
++                    d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178z"
++                  />
++                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
++                </svg>
++              )}
++            </button>
++          </div>
+         </Field>
+         <div className="mb-4 text-right">
+           <Link className="text-sm text-primary" href="/forgot-password">
+diff --git a/app/page.tsx b/app/page.tsx
+index 325c601..e528c42 100644
+--- a/app/page.tsx
++++ b/app/page.tsx
+@@ -4,5 +4,5 @@ import { getSession } from "@/lib/session";
+ export default async function HomePage() {
+   const session = await getSession();
+   if (!session) redirect("/login");
+-  redirect(session.setupComplete ? "/dashboard" : "/setup");
++  redirect("/setup");
+ }
+diff --git a/app/reset-password/page.tsx b/app/reset-password/page.tsx
+index 3bb3178..f69db86 100644
+--- a/app/reset-password/page.tsx
++++ b/app/reset-password/page.tsx
+@@ -9,6 +9,7 @@ function ResetForm() {
+   const router = useRouter();
+   const params = useSearchParams();
+   const [password, setPassword] = useState("");
++  const [showPassword, setShowPassword] = useState(false);
+   const [error, setError] = useState("");
+   const [success, setSuccess] = useState("");
+   const [loading, setLoading] = useState(false);
+@@ -41,14 +42,57 @@ function ResetForm() {
+   return (
+     <form onSubmit={onSubmit}>
+       <Field label="New password">
+-        <input
+-          className="input"
+-          type="password"
+-          minLength={8}
+-          value={password}
+-          onChange={(e) => setPassword(e.target.value)}
+-          required
+-        />
++        <div className="relative flex items-center">
++          <input
++            className="input pr-11"
++            type={showPassword ? "text" : "password"}
++            minLength={8}
++            value={password}
++            onChange={(e) => setPassword(e.target.value)}
++            required
++            suppressHydrationWarning
++          />
++          <button
++            type="button"
++            onClick={() => setShowPassword((prev) => !prev)}
++            className="absolute right-3 inline-flex items-center justify-center rounded-lg p-1 text-muted transition hover:text-ink focus:outline-none"
++            aria-label={showPassword ? "Hide password" : "Show password"}
++            title={showPassword ? "Hide password" : "Show password"}
++          >
++            {showPassword ? (
++              <svg
++                xmlns="http://www.w3.org/2000/svg"
++                fill="none"
++                viewBox="0 0 24 24"
++                strokeWidth={1.75}
++                stroke="currentColor"
++                className="h-5 w-5"
++              >
++                <path
++                  strokeLinecap="round"
++                  strokeLinejoin="round"
++                  d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
++                />
++              </svg>
++            ) : (
++              <svg
++                xmlns="http://www.w3.org/2000/svg"
++                fill="none"
++                viewBox="0 0 24 24"
++                strokeWidth={1.75}
++                stroke="currentColor"
++                className="h-5 w-5"
++              >
++                <path
++                  strokeLinecap="round"
++                  strokeLinejoin="round"
++                  d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178z"
++                />
++                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
++              </svg>
++            )}
++          </button>
++        </div>
+       </Field>
+       {error ? <div className="mb-4"><Alert tone="error">{error}</Alert></div> : null}
+       {success ? <div className="mb-4"><Alert tone="success">{success}</Alert></div> : null}
+diff --git a/app/setup/page.tsx b/app/setup/page.tsx
+index 629afba..a007324 100644
+--- a/app/setup/page.tsx
++++ b/app/setup/page.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { FormEvent, useMemo, useState } from "react";
++import { FormEvent, useEffect, useMemo, useState } from "react";
+ import { useRouter } from "next/navigation";
+ import { AppShell } from "@/components/AppShell";
+ import { Alert, Field } from "@/components/ui";
+@@ -17,6 +17,26 @@ export default function SetupPage() {
+   const [error, setError] = useState("");
+   const [loading, setLoading] = useState(false);
+ 
++  useEffect(() => {
++    fetch("/api/auth/session")
++      .then((res) => res.json())
++      .then((data) => {
++        if (data.company?.name) {
++          setName(data.company.name);
++          if (data.company.facilities?.length) {
++            setFacilityCount(String(data.company.facilities.length));
++            setFacilities(
++              data.company.facilities.map((f: { name?: string; address?: string }) => ({
++                name: f.name ?? "",
++                address: f.address ?? "",
++              })),
++            );
++          }
++        }
++      })
++      .catch(() => {});
++  }, []);
++
+   const count = useMemo(() => {
+     const n = Number(facilityCount);
+     return Number.isFinite(n) && n > 0 ? Math.min(50, Math.floor(n)) : 0;
+@@ -70,16 +90,16 @@ export default function SetupPage() {
+       <form className="mt-8 max-w-3xl space-y-6" onSubmit={onSubmit}>
+         <div className="card grid gap-4 md:grid-cols-2">
+           <Field label="Company name">
+-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
++            <input className="input" value={name} onChange={(e) => setName(e.target.value)} required suppressHydrationWarning />
+           </Field>
+           <Field label="Industry">
+-            <input className="input" value={industry} onChange={(e) => setIndustry(e.target.value)} required />
++            <input className="input" value={industry} onChange={(e) => setIndustry(e.target.value)} required suppressHydrationWarning />
+           </Field>
+           <Field label="Employee count">
+-            <input className="input" type="number" min={1} value={employeeCount} onChange={(e) => setEmployeeCount(e.target.value)} required />
++            <input className="input" type="number" min={1} value={employeeCount} onChange={(e) => setEmployeeCount(e.target.value)} required suppressHydrationWarning />
+           </Field>
+           <Field label="Number of facilities">
+-            <input className="input" type="number" min={1} max={50} value={facilityCount} onChange={(e) => updateCount(e.target.value)} required />
++            <input className="input" type="number" min={1} max={50} value={facilityCount} onChange={(e) => updateCount(e.target.value)} required suppressHydrationWarning />
+           </Field>
+         </div>
+         <div className="space-y-4">
+@@ -95,6 +115,7 @@ export default function SetupPage() {
+                     setFacilities((prev) => prev.map((item, i) => (i === index ? { ...item, name: e.target.value } : item)))
+                   }
+                   required
++                  suppressHydrationWarning
+                 />
+               </Field>
+               <Field label="Address">
+@@ -105,6 +126,7 @@ export default function SetupPage() {
+                     setFacilities((prev) => prev.map((item, i) => (i === index ? { ...item, address: e.target.value } : item)))
+                   }
+                   required
++                  suppressHydrationWarning
+                 />
+               </Field>
+             </div>
+diff --git a/app/signup/page.tsx b/app/signup/page.tsx
+index 3134e65..0c34740 100644
+--- a/app/signup/page.tsx
++++ b/app/signup/page.tsx
+@@ -9,6 +9,7 @@ export default function SignupPage() {
+   const router = useRouter();
+   const [email, setEmail] = useState("");
+   const [password, setPassword] = useState("");
++  const [showPassword, setShowPassword] = useState(false);
+   const [error, setError] = useState("");
+   const [loading, setLoading] = useState(false);
+ 
+@@ -27,7 +28,7 @@ export default function SignupPage() {
+       setError(data.error ?? "Unable to create account");
+       return;
+     }
+-    router.push(data.redirectTo ?? "/setup");
++    router.push(data.redirectTo ?? "/login");
+     router.refresh();
+   }
+ 
+@@ -46,17 +47,60 @@ export default function SignupPage() {
+     >
+       <form onSubmit={onSubmit}>
+         <Field label="Email">
+-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
++          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required suppressHydrationWarning />
+         </Field>
+         <Field label="Password">
+-          <input
+-            className="input"
+-            type="password"
+-            minLength={8}
+-            value={password}
+-            onChange={(e) => setPassword(e.target.value)}
+-            required
+-          />
++          <div className="relative flex items-center">
++            <input
++              className="input pr-11"
++              type={showPassword ? "text" : "password"}
++              minLength={8}
++              value={password}
++              onChange={(e) => setPassword(e.target.value)}
++              required
++              suppressHydrationWarning
++            />
++            <button
++              type="button"
++              onClick={() => setShowPassword((prev) => !prev)}
++              className="absolute right-3 inline-flex items-center justify-center rounded-lg p-1 text-muted transition hover:text-ink focus:outline-none"
++              aria-label={showPassword ? "Hide password" : "Show password"}
++              title={showPassword ? "Hide password" : "Show password"}
++            >
++              {showPassword ? (
++                <svg
++                  xmlns="http://www.w3.org/2000/svg"
++                  fill="none"
++                  viewBox="0 0 24 24"
++                  strokeWidth={1.75}
++                  stroke="currentColor"
++                  className="h-5 w-5"
++                >
++                  <path
++                    strokeLinecap="round"
++                    strokeLinejoin="round"
++                    d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
++                  />
++                </svg>
++              ) : (
++                <svg
++                  xmlns="http://www.w3.org/2000/svg"
++                  fill="none"
++                  viewBox="0 0 24 24"
++                  strokeWidth={1.75}
++                  stroke="currentColor"
++                  className="h-5 w-5"
++                >
++                  <path
++                    strokeLinecap="round"
++                    strokeLinejoin="round"
++                    d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178z"
++                  />
++                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
++                </svg>
++              )}
++            </button>
++          </div>
+         </Field>
+         {error ? (
+           <div className="mb-4">
+diff --git a/app/upload/page.tsx b/app/upload/page.tsx
+index 8a55a73..9193386 100644
+--- a/app/upload/page.tsx
++++ b/app/upload/page.tsx
+@@ -2,6 +2,7 @@
+ 
+ import { FormEvent, useEffect, useRef, useState } from "react";
+ import Link from "next/link";
++import { useRouter } from "next/navigation";
+ import { AppShell } from "@/components/AppShell";
+ import { Alert, Field } from "@/components/ui";
+ import { REPORTING_YEARS } from "@/lib/years";
+@@ -10,6 +11,7 @@ type Scope = "Scope1" | "Scope2";
+ type Facility = { id: string; name: string };
+ 
+ export default function UploadPage() {
++  const router = useRouter();
+   const [scope, setScope] = useState<Scope | null>(null);
+   const [facilities, setFacilities] = useState<Facility[]>([]);
+   const [facilityId, setFacilityId] = useState("");
+@@ -60,6 +62,8 @@ export default function UploadPage() {
+     if (fileInputRef.current) {
+       fileInputRef.current.value = "";
+     }
++    router.push("/dashboard");
++    router.refresh();
+   }
+ 
+   async function onSubmit(event: FormEvent) {
+@@ -96,7 +100,7 @@ export default function UploadPage() {
+         <form className="card mt-8 max-w-2xl space-y-4" onSubmit={onSubmit}>
+           <h2 className="font-heading text-2xl">{scope === "Scope1" ? "Scope 1 upload" : "Scope 2 upload"}</h2>
+           <Field label="Facility">
+-            <select className="input" value={facilityId} onChange={(e) => setFacilityId(e.target.value)} required>
++            <select className="input" value={facilityId} onChange={(e) => setFacilityId(e.target.value)} required suppressHydrationWarning>
+               {facilities.map((facility) => (
+                 <option key={facility.id} value={facility.id}>
+                   {facility.name}
+@@ -105,7 +109,7 @@ export default function UploadPage() {
+             </select>
+           </Field>
+           <Field label="Reporting year">
+-            <select className="input" value={reportingYear} onChange={(e) => setReportingYear(e.target.value)}>
++            <select className="input" value={reportingYear} onChange={(e) => setReportingYear(e.target.value)} suppressHydrationWarning>
+               {REPORTING_YEARS.map((year) => (
+                 <option key={year} value={year}>
+                   {year}
+@@ -125,6 +129,7 @@ export default function UploadPage() {
+                 setMessage("");
+               }}
+               required
++              suppressHydrationWarning
+             />
+           </Field>
+           {replacePrompt ? (
+diff --git a/components/AppShell.tsx b/components/AppShell.tsx
+index 36ee879..511d943 100644
+--- a/components/AppShell.tsx
++++ b/components/AppShell.tsx
+@@ -7,20 +7,12 @@ import { useState } from "react";
+ const links = [
+   { href: "/upload", label: "Upload" },
+   { href: "/dashboard", label: "Dashboard" },
++  { href: "/profile", label: "Profile" },
+ ];
+ 
+ export function AppShell({ children }: { children: React.ReactNode }) {
+   const pathname = usePathname();
+-  const router = useRouter();
+   const [open, setOpen] = useState(false);
+-  const [loggingOut, setLoggingOut] = useState(false);
+-
+-  async function logout() {
+-    setLoggingOut(true);
+-    await fetch("/api/auth/logout", { method: "POST" });
+-    router.push("/login");
+-    router.refresh();
+-  }
+ 
+   return (
+     <div className="min-h-screen bg-canvas">
+@@ -43,10 +35,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
+               {link.label}
+             </Link>
+           ))}
+-
+-          <button className="w-full rounded-2xl px-4 py-3 text-left text-ink hover:bg-canvas" onClick={logout} disabled={loggingOut}>
+-            {loggingOut ? "Signing outÔÇª" : "Logout"}
+-          </button>
+         </div>
+       ) : null}
+ 
+@@ -71,16 +59,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
+                 </Link>
+               ))}
+             </nav>
+-
+-            <div className="mt-auto space-y-4">
+-              <button
+-                className="w-full rounded-2xl px-4 py-3 text-left text-muted hover:bg-canvas hover:text-ink transition"
+-                onClick={logout}
+-                disabled={loggingOut}
+-              >
+-                {loggingOut ? "Signing outÔÇª" : "Logout"}
+-              </button>
+-            </div>
+           </div>
+         </aside>
+ 
+diff --git a/lib/company.ts b/lib/company.ts
+index 09bc4e3..855ee49 100644
+--- a/lib/company.ts
++++ b/lib/company.ts
+@@ -89,6 +89,118 @@ export function assertFacilityOwned(company: CompanyProfile, facilityId: string)
+   return facility;
+ }
+ 
++export async function updateCompany(params: {
++  companyId: string;
++  name?: string;
++  industry?: string;
++  employeeCount?: number;
++}): Promise<CompanyProfile> {
++  const existing = await readCompany(params.companyId);
++  if (!existing) throw new Error("Company not found");
++
++  const company: CompanyProfile = {
++    ...existing,
++    name: params.name !== undefined ? params.name.trim() : existing.name,
++    industry: params.industry !== undefined ? params.industry.trim() : existing.industry,
++    employeeCount: params.employeeCount !== undefined ? params.employeeCount : existing.employeeCount,
++    updatedAt: new Date().toISOString(),
++  };
++
++  await writeCompany(company);
++  return company;
++}
++
++export async function addCompanyFacility(params: {
++  companyId: string;
++  name: string;
++  address: string;
++}): Promise<{ company: CompanyProfile; facility: Facility }> {
++  const existing = await readCompany(params.companyId);
++  if (!existing) throw new Error("Company not found");
++
++  const facility: Facility = {
++    id: randomUUID(),
++    name: params.name.trim(),
++    address: params.address.trim(),
++  };
++
++  const facilities = [...existing.facilities, facility];
++  const company: CompanyProfile = {
++    ...existing,
++    facilities,
++    facilityCount: facilities.length,
++    updatedAt: new Date().toISOString(),
++  };
++
++  await writeCompany(company);
++
++  const folderId = await companyFolderId(company.id);
++  const facilityFolder = await createFolder(folderId, facilityFolderName(facility.id));
++  await writeJson(facilityFolder, "facility.json", facility);
++
++  return { company, facility };
++}
++
++export async function updateCompanyFacility(params: {
++  companyId: string;
++  facilityId: string;
++  name: string;
++  address: string;
++}): Promise<CompanyProfile> {
++  const existing = await readCompany(params.companyId);
++  if (!existing) throw new Error("Company not found");
++
++  const index = existing.facilities.findIndex((f) => f.id === params.facilityId);
++  if (index === -1) throw new Error("Facility not found");
++
++  const updatedFacility: Facility = {
++    ...existing.facilities[index],
++    name: params.name.trim(),
++    address: params.address.trim(),
++  };
++
++  const facilities = [...existing.facilities];
++  facilities[index] = updatedFacility;
++
++  const company: CompanyProfile = {
++    ...existing,
++    facilities,
++    facilityCount: facilities.length,
++    updatedAt: new Date().toISOString(),
++  };
++
++  await writeCompany(company);
++
++  const folderId = await companyFolderId(company.id);
++  const facilityFolder = await createFolder(folderId, facilityFolderName(updatedFacility.id));
++  await writeJson(facilityFolder, "facility.json", updatedFacility);
++
++  return company;
++}
++
++export async function removeCompanyFacility(params: {
++  companyId: string;
++  facilityId: string;
++}): Promise<CompanyProfile> {
++  const existing = await readCompany(params.companyId);
++  if (!existing) throw new Error("Company not found");
++
++  const facilities = existing.facilities.filter((f) => f.id !== params.facilityId);
++  if (facilities.length === existing.facilities.length) {
++    throw new Error("Facility not found");
++  }
++
++  const company: CompanyProfile = {
++    ...existing,
++    facilities,
++    facilityCount: facilities.length,
++    updatedAt: new Date().toISOString(),
++  };
++
++  await writeCompany(company);
++  return company;
++}
++
+ export async function getScopeFolder(params: {
+   companyId: string;
+   facilityId: string;
+diff --git a/lib/datasets.ts b/lib/datasets.ts
+index fdef5f3..ee715c8 100644
+--- a/lib/datasets.ts
++++ b/lib/datasets.ts
+@@ -158,39 +158,43 @@ export async function listCompanyDatasets(company: CompanyProfile): Promise<{
+         years.add(yearFolder.name);
+         if (isScope1) {
+           const loaded = await readJson<LoadedScope1>(processed.id);
+-          const enrichedRecords = (loaded.records || []).map((r) => {
+-            if (r.emissions !== null && r.emissions !== undefined) return r;
+-            const calYear = reportingYearToCalendarYear(r.reportingYear) || 2025;
+-            const factor = getScope1Factor(r.fuelType, calYear);
+-            const factorValue = factor?.value ?? null;
+-            return {
+-              ...r,
+-              emissionFactor: r.emissionFactor ?? factorValue,
+-              emissionFactorUnit: r.emissionFactorUnit || factor?.unit || "",
+-              emissionFactorSource: factor
+-                ? `${factor.publisher} ${factor.year} ÔÇö ${factor.document}`
+-                : r.emissionFactorSource,
+-              emissions: factorValue !== null && r.quantity != null ? r.quantity * factorValue : null,
+-            };
+-          });
++          const enrichedRecords = await Promise.all(
++            (loaded.records || []).map(async (r) => {
++              if (r.emissions !== null && r.emissions !== undefined) return r;
++              const calYear = reportingYearToCalendarYear(r.reportingYear) || 2025;
++              const factor = await getScope1Factor(r.fuelType, calYear);
++              const factorValue = factor?.value ?? null;
++              return {
++                ...r,
++                emissionFactor: r.emissionFactor ?? factorValue,
++                emissionFactorUnit: r.emissionFactorUnit || factor?.unit || "",
++                emissionFactorSource: factor
++                  ? `${factor.publisher} ${factor.year} ÔÇö ${factor.document}`
++                  : r.emissionFactorSource,
++                emissions: factorValue !== null && r.quantity != null ? r.quantity * factorValue : null,
++              };
++            }),
++          );
+           scope1.push({ ...loaded, records: enrichedRecords });
+         } else {
+           const loaded = await readJson<LoadedScope2>(processed.id);
+-          const enrichedRecords = (loaded.records || []).map((r) => {
+-            if (r.emissions !== null && r.emissions !== undefined) return r;
+-            const calYear = reportingYearToCalendarYear(r.reportingYear) || 2025;
+-            const factor = getScope2Factor(calYear);
+-            const factorValue = factor?.value ?? null;
+-            return {
+-              ...r,
+-              emissionFactor: r.emissionFactor ?? factorValue,
+-              emissionFactorUnit: r.emissionFactorUnit || factor?.unit || "",
+-              emissionFactorSource: factor
+-                ? `${factor.publisher} ${factor.year} ÔÇö ${factor.document}`
+-                : r.emissionFactorSource,
+-              emissions: factorValue !== null && r.kWh != null ? r.kWh * factorValue : null,
+-            };
+-          });
++          const enrichedRecords = await Promise.all(
++            (loaded.records || []).map(async (r) => {
++              if (r.emissions !== null && r.emissions !== undefined) return r;
++              const calYear = reportingYearToCalendarYear(r.reportingYear) || 2025;
++              const factor = await getScope2Factor(calYear);
++              const factorValue = factor?.value ?? null;
++              return {
++                ...r,
++                emissionFactor: r.emissionFactor ?? factorValue,
++                emissionFactorUnit: r.emissionFactorUnit || factor?.unit || "",
++                emissionFactorSource: factor
++                  ? `${factor.publisher} ${factor.year} ÔÇö ${factor.document}`
++                  : r.emissionFactorSource,
++                emissions: factorValue !== null && r.kWh != null ? r.kWh * factorValue : null,
++              };
++            }),
++          );
+           scope2.push({ ...loaded, records: enrichedRecords });
+         }
+       }
+diff --git a/lib/emissionFactors.ts b/lib/emissionFactors.ts
+index 94e27b4..533cda2 100644
+--- a/lib/emissionFactors.ts
++++ b/lib/emissionFactors.ts
+@@ -1,93 +1,928 @@
+-import type { EmissionFactor, FuelType } from "./types";
+-
+-const DEFRA_SOURCE =
+-  "https://www.gov.uk/government/collections/government-conversion-factors-for-company-reporting";
+-const CEA_SOURCE = "https://cea.nic.in/cdm-co2-baseline-database/";
+-const IPCC_SOURCE = "https://www.ipcc-nggip.iges.or.jp/EFDB/main.php";
+-
+-const FUELS: FuelType[] = ["Diesel", "Petrol", "CNG", "LNG"];
+-const DEFRA_YEARS = [2020, 2021, 2022, 2023, 2024, 2025, 2026] as const;
+-
+-// Official DEFRA / UK Government Scope 1 GHG Conversion Factors 2025 (Fuels worksheet)
+-// Converted to tCO2e per activity unit (litres for liquid fuels, kg for gaseous fuels):
+-// - Diesel (average biofuel blend): 2.54016 kgCO2e / litre => 0.00254016 tCO2e / litre
+-// - Petrol (average biofuel blend): 2.06916 kgCO2e / litre => 0.00206916 tCO2e / litre
+-// - CNG: 2575.46441 kgCO2e / tonne => 2.57546441 kgCO2e / kg => 0.00257546441 tCO2e / kg
+-// - LNG: 2603.30441 kgCO2e / tonne => 2.60330441 kgCO2e / kg => 0.00260330441 tCO2e / kg
+-const SCOPE1_FACTORS_BY_FUEL: Record<FuelType, { value: number; unit: string }> = {
+-  Diesel: { value: 2.54016 / 1000, unit: "kgCO2e / litre" },
+-  Petrol: { value: 2.06916 / 1000, unit: "kgCO2e / litre" },
+-  CNG: { value: 2575.46441 / 1000000, unit: "kgCO2e / kg" },
+-  LNG: { value: 2603.30441 / 1000000, unit: "kgCO2e / kg" },
++import { Readable } from "stream";
++import { findChild, getRootFolderId, isDriveConfigured } from "./drive";
++import { google } from "googleapis";
++import type { EmissionFactor, FuelType, Scope } from "./types";
++
++export type EmissionFactorMasterRow = {
++  source: string;
++  year: number;
++  scope: "Scope 1" | "Scope 2" | "Scope1" | "Scope2";
++  activity: string;
++  unit: string;
++  emissionFactor: number;
++  emissionFactorUnit: string;
++  ghgGas: string;
++  region: string;
++  notes: string;
++  reference: string;
+ };
+ 
+-function defraFactor(fuel: FuelType, year: number): EmissionFactor {
+-  const fuelData = SCOPE1_FACTORS_BY_FUEL[fuel];
++export const MASTER_SHEET_NAME = "Emission Factor Master Dataset";
+ 
+-  return {
+-    value: fuelData ? fuelData.value : null,
+-    unit: fuelData ? fuelData.unit : "kgCO2e / unit",
+-    source: DEFRA_SOURCE,
+-    publisher: "DEFRA/DESNZ",
+-    document: "UK Government GHG Conversion Factors for Company Reporting",
+-    year,
++// Master dataset seed containing multiple sources (DEFRA, CA, CEA, etc.) and multiple years (2020-2026+)
++export const MASTER_DATASET_SEED: EmissionFactorMasterRow[] = [
++  // --- DEFRA (UK Government / DESNZ) Scope 1 Fuels (2020-2026) ---
++  {
++    source: "DEFRA",
++    year: 2024,
++    scope: "Scope 1",
++    activity: "Diesel",
++    unit: "litre",
++    emissionFactor: 2.54016 / 1000,
++    emissionFactorUnit: "tCO2e / litre",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "UK / Global",
++    notes: "Average biofuel blend (UK standard)",
++    reference: "UK Government GHG Conversion Factors for Company Reporting 2024",
++  },
++  {
++    source: "DEFRA",
++    year: 2025,
++    scope: "Scope 1",
++    activity: "Diesel",
++    unit: "litre",
++    emissionFactor: 2.54016 / 1000,
++    emissionFactorUnit: "tCO2e / litre",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "UK / Global",
++    notes: "Average biofuel blend (UK standard)",
++    reference: "UK Government GHG Conversion Factors for Company Reporting 2025",
++  },
++  {
++    source: "DEFRA",
++    year: 2026,
++    scope: "Scope 1",
++    activity: "Diesel",
++    unit: "litre",
++    emissionFactor: 2.54016 / 1000,
++    emissionFactorUnit: "tCO2e / litre",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "UK / Global",
++    notes: "Average biofuel blend (UK standard)",
++    reference: "UK Government GHG Conversion Factors for Company Reporting 2026",
++  },
++  {
++    source: "DEFRA",
++    year: 2024,
++    scope: "Scope 1",
++    activity: "Petrol",
++    unit: "litre",
++    emissionFactor: 2.06916 / 1000,
++    emissionFactorUnit: "tCO2e / litre",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "UK / Global",
++    notes: "Average biofuel blend (UK standard)",
++    reference: "UK Government GHG Conversion Factors for Company Reporting 2024",
++  },
++  {
++    source: "DEFRA",
++    year: 2025,
++    scope: "Scope 1",
++    activity: "Petrol",
++    unit: "litre",
++    emissionFactor: 2.06916 / 1000,
++    emissionFactorUnit: "tCO2e / litre",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "UK / Global",
++    notes: "Average biofuel blend (UK standard)",
++    reference: "UK Government GHG Conversion Factors for Company Reporting 2025",
++  },
++  {
++    source: "DEFRA",
++    year: 2026,
++    scope: "Scope 1",
++    activity: "Petrol",
++    unit: "litre",
++    emissionFactor: 2.06916 / 1000,
++    emissionFactorUnit: "tCO2e / litre",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "UK / Global",
++    notes: "Average biofuel blend (UK standard)",
++    reference: "UK Government GHG Conversion Factors for Company Reporting 2026",
++  },
++  {
++    source: "DEFRA",
++    year: 2024,
++    scope: "Scope 1",
++    activity: "CNG",
++    unit: "kg",
++    emissionFactor: 2575.46441 / 1000000,
++    emissionFactorUnit: "tCO2e / kg",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "UK / Global",
++    notes: "100% Compressed Natural Gas",
++    reference: "UK Government GHG Conversion Factors for Company Reporting 2024",
++  },
++  {
++    source: "DEFRA",
++    year: 2025,
++    scope: "Scope 1",
++    activity: "CNG",
++    unit: "kg",
++    emissionFactor: 2575.46441 / 1000000,
++    emissionFactorUnit: "tCO2e / kg",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "UK / Global",
++    notes: "100% Compressed Natural Gas",
++    reference: "UK Government GHG Conversion Factors for Company Reporting 2025",
++  },
++  {
++    source: "DEFRA",
++    year: 2026,
++    scope: "Scope 1",
++    activity: "CNG",
++    unit: "kg",
++    emissionFactor: 2575.46441 / 1000000,
++    emissionFactorUnit: "tCO2e / kg",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "UK / Global",
++    notes: "100% Compressed Natural Gas",
++    reference: "UK Government GHG Conversion Factors for Company Reporting 2026",
++  },
++  {
++    source: "DEFRA",
++    year: 2024,
++    scope: "Scope 1",
++    activity: "LNG",
++    unit: "kg",
++    emissionFactor: 2603.30441 / 1000000,
++    emissionFactorUnit: "tCO2e / kg",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "UK / Global",
++    notes: "100% Liquefied Natural Gas",
++    reference: "UK Government GHG Conversion Factors for Company Reporting 2024",
++  },
++  {
++    source: "DEFRA",
++    year: 2025,
++    scope: "Scope 1",
++    activity: "LNG",
++    unit: "kg",
++    emissionFactor: 2603.30441 / 1000000,
++    emissionFactorUnit: "tCO2e / kg",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "UK / Global",
++    notes: "100% Liquefied Natural Gas",
++    reference: "UK Government GHG Conversion Factors for Company Reporting 2025",
++  },
++  {
++    source: "DEFRA",
++    year: 2026,
++    scope: "Scope 1",
++    activity: "LNG",
++    unit: "kg",
++    emissionFactor: 2603.30441 / 1000000,
++    emissionFactorUnit: "tCO2e / kg",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "UK / Global",
++    notes: "100% Liquefied Natural Gas",
++    reference: "UK Government GHG Conversion Factors for Company Reporting 2026",
++  },
++
++  // --- CA (California Air Resources Board - CARB / Climate Action Reserve) (2024-2026) ---
++  {
++    source: "CA",
++    year: 2024,
++    scope: "Scope 1",
++    activity: "Diesel",
++    unit: "litre",
++    emissionFactor: 0.0026896,
++    emissionFactorUnit: "tCO2e / litre",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CARB Standard Ultra-Low Sulfur Diesel",
++    reference: "California Air Resources Board Mandatory GHG Reporting (MRR 2024)",
++  },
++  {
++    source: "CA",
++    year: 2025,
++    scope: "Scope 1",
++    activity: "Diesel",
++    unit: "litre",
++    emissionFactor: 0.0026896,
++    emissionFactorUnit: "tCO2e / litre",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CARB Standard Ultra-Low Sulfur Diesel",
++    reference: "California Air Resources Board Mandatory GHG Reporting (MRR 2025)",
++  },
++  {
++    source: "CA",
++    year: 2026,
++    scope: "Scope 1",
++    activity: "Diesel",
++    unit: "litre",
++    emissionFactor: 0.0026896,
++    emissionFactorUnit: "tCO2e / litre",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CARB Standard Ultra-Low Sulfur Diesel",
++    reference: "California Air Resources Board Mandatory GHG Reporting (MRR 2026)",
++  },
++  {
++    source: "CA",
++    year: 2024,
++    scope: "Scope 1",
++    activity: "Petrol",
++    unit: "litre",
++    emissionFactor: 0.0023223,
++    emissionFactorUnit: "tCO2e / litre",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CARB Reformulated Gasoline (CaRFG3)",
++    reference: "California Air Resources Board Mandatory GHG Reporting (MRR 2024)",
++  },
++  {
++    source: "CA",
++    year: 2025,
++    scope: "Scope 1",
++    activity: "Petrol",
++    unit: "litre",
++    emissionFactor: 0.0023223,
++    emissionFactorUnit: "tCO2e / litre",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CARB Reformulated Gasoline (CaRFG3)",
++    reference: "California Air Resources Board Mandatory GHG Reporting (MRR 2025)",
++  },
++  {
++    source: "CA",
++    year: 2026,
++    scope: "Scope 1",
++    activity: "Petrol",
++    unit: "litre",
++    emissionFactor: 0.0023223,
++    emissionFactorUnit: "tCO2e / litre",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CARB Reformulated Gasoline (CaRFG3)",
++    reference: "California Air Resources Board Mandatory GHG Reporting (MRR 2026)",
++  },
++  {
++    source: "CA",
++    year: 2024,
++    scope: "Scope 1",
++    activity: "CNG",
++    unit: "kg",
++    emissionFactor: 0.00275,
++    emissionFactorUnit: "tCO2e / kg",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CARB Compressed Natural Gas Specification",
++    reference: "California Air Resources Board Mandatory GHG Reporting (MRR 2024)",
++  },
++  {
++    source: "CA",
++    year: 2025,
++    scope: "Scope 1",
++    activity: "CNG",
++    unit: "kg",
++    emissionFactor: 0.00275,
++    emissionFactorUnit: "tCO2e / kg",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CARB Compressed Natural Gas Specification",
++    reference: "California Air Resources Board Mandatory GHG Reporting (MRR 2025)",
++  },
++  {
++    source: "CA",
++    year: 2026,
++    scope: "Scope 1",
++    activity: "CNG",
++    unit: "kg",
++    emissionFactor: 0.00275,
++    emissionFactorUnit: "tCO2e / kg",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CARB Compressed Natural Gas Specification",
++    reference: "California Air Resources Board Mandatory GHG Reporting (MRR 2026)",
++  },
++  {
++    source: "CA",
++    year: 2024,
++    scope: "Scope 1",
++    activity: "LNG",
++    unit: "kg",
++    emissionFactor: 0.00278,
++    emissionFactorUnit: "tCO2e / kg",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CARB Liquefied Natural Gas Specification",
++    reference: "California Air Resources Board Mandatory GHG Reporting (MRR 2024)",
++  },
++  {
++    source: "CA",
++    year: 2025,
++    scope: "Scope 1",
++    activity: "LNG",
++    unit: "kg",
++    emissionFactor: 0.00278,
++    emissionFactorUnit: "tCO2e / kg",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CARB Liquefied Natural Gas Specification",
++    reference: "California Air Resources Board Mandatory GHG Reporting (MRR 2025)",
++  },
++  {
++    source: "CA",
++    year: 2026,
++    scope: "Scope 1",
++    activity: "LNG",
++    unit: "kg",
++    emissionFactor: 0.00278,
++    emissionFactorUnit: "tCO2e / kg",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CARB Liquefied Natural Gas Specification",
++    reference: "California Air Resources Board Mandatory GHG Reporting (MRR 2026)",
++  },
++  {
++    source: "CA",
++    year: 2024,
++    scope: "Scope 2",
++    activity: "Electricity",
++    unit: "kWh",
++    emissionFactor: 0.000214,
++    emissionFactorUnit: "tCO2e / kWh",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CAMX California Grid Average Subregion",
++    reference: "US EPA eGRID / California Air Resources Board (2024)",
++  },
++  {
++    source: "CA",
++    year: 2025,
++    scope: "Scope 2",
++    activity: "Electricity",
++    unit: "kWh",
++    emissionFactor: 0.000208,
++    emissionFactorUnit: "tCO2e / kWh",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CAMX California Grid Average Subregion",
++    reference: "US EPA eGRID / California Air Resources Board (2025)",
++  },
++  {
++    source: "CA",
++    year: 2026,
++    scope: "Scope 2",
++    activity: "Electricity",
++    unit: "kWh",
++    emissionFactor: 0.0002,
++    emissionFactorUnit: "tCO2e / kWh",
++    ghgGas: "All GHGs (CO2, CH4, N2O)",
++    region: "California",
++    notes: "CAMX California Grid Average Subregion",
++    reference: "US EPA eGRID / California Air Resources Board (2026)",
++  },
++
++  // --- CEA (Central Electricity Authority India) Scope 2 Electricity (2020-2026) ---
++  {
++    source: "CEA",
++    year: 2020,
++    scope: "Scope 2",
++    activity: "Electricity",
++    unit: "kWh",
++    emissionFactor: 0.713 / 1000,
++    emissionFactorUnit: "tCO2e / kWh",
++    ghgGas: "CO2",
++    region: "India",
++    notes: "National Grid Weighted Average Margin (FY20)",
++    reference: "CO2 Baseline Database for the Indian Power Sector (v21.0)",
++  },
++  {
++    source: "CEA",
++    year: 2021,
++    scope: "Scope 2",
++    activity: "Electricity",
++    unit: "kWh",
++    emissionFactor: 0.703 / 1000,
++    emissionFactorUnit: "tCO2e / kWh",
++    ghgGas: "CO2",
++    region: "India",
++    notes: "National Grid Weighted Average Margin (FY21)",
++    reference: "CO2 Baseline Database for the Indian Power Sector (v21.0)",
++  },
++  {
++    source: "CEA",
++    year: 2022,
++    scope: "Scope 2",
++    activity: "Electricity",
++    unit: "kWh",
++    emissionFactor: 0.715 / 1000,
++    emissionFactorUnit: "tCO2e / kWh",
++    ghgGas: "CO2",
++    region: "India",
++    notes: "National Grid Weighted Average Margin (FY22)",
++    reference: "CO2 Baseline Database for the Indian Power Sector (v21.0)",
++  },
++  {
++    source: "CEA",
++    year: 2023,
++    scope: "Scope 2",
++    activity: "Electricity",
++    unit: "kWh",
++    emissionFactor: 0.716 / 1000,
++    emissionFactorUnit: "tCO2e / kWh",
++    ghgGas: "CO2",
++    region: "India",
++    notes: "National Grid Weighted Average Margin (FY23)",
++    reference: "CO2 Baseline Database for the Indian Power Sector (v21.0)",
++  },
++  {
++    source: "CEA",
++    year: 2024,
++    scope: "Scope 2",
++    activity: "Electricity",
++    unit: "kWh",
++    emissionFactor: 0.727 / 1000,
++    emissionFactorUnit: "tCO2e / kWh",
++    ghgGas: "CO2",
++    region: "India",
++    notes: "National Grid Weighted Average Margin (FY24)",
++    reference: "CO2 Baseline Database for the Indian Power Sector (v21.0)",
++  },
++  {
++    source: "CEA",
++    year: 2025,
++    scope: "Scope 2",
++    activity: "Electricity",
++    unit: "kWh",
++    emissionFactor: 0.71 / 1000,
++    emissionFactorUnit: "tCO2e / kWh",
++    ghgGas: "CO2",
++    region: "India",
++    notes: "National Grid Weighted Average Margin (FY25)",
++    reference: "CO2 Baseline Database for the Indian Power Sector (v21.0)",
++  },
++  {
++    source: "CEA",
++    year: 2026,
++    scope: "Scope 2",
++    activity: "Electricity",
++    unit: "kWh",
++    emissionFactor: 0.71 / 1000,
++    emissionFactorUnit: "tCO2e / kWh",
++    ghgGas: "CO2",
++    region: "India",
++    notes: "National Grid Weighted Average Margin (FY26)",
++    reference: "CO2 Baseline Database for the Indian Power Sector (v21.0)",
++  },
++];
++
++export const FUEL_TYPES: FuelType[] = ["Diesel", "Petrol", "CNG", "LNG"];
++
++// In-memory cache for emission factor rows fetched from Google Sheets
++let cachedMasterRows: EmissionFactorMasterRow[] | null = null;
++let cacheTimestamp = 0;
++const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache
++
++function getDriveClient() {
++  const clientId = process.env.GOOGLE_CLIENT_ID;
++  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
++  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
++
++  if (clientId && clientSecret && refreshToken) {
++    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
++    oauth2Client.setCredentials({ refresh_token: refreshToken });
++    return google.drive({ version: "v3", auth: oauth2Client });
++  }
++
++  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL;
++  const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY;
++  if (email && privateKey) {
++    const jwt = new google.auth.JWT({
++      email,
++      key: privateKey.replace(/\\n/g, "\n"),
++      scopes: ["https://www.googleapis.com/auth/drive"],
++    });
++    return google.drive({ version: "v3", auth: jwt });
++  }
++
++  return null;
++}
++
++function parseCsv(csvText: string): EmissionFactorMasterRow[] {
++  const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
++  if (lines.length <= 1) return [];
++
++  const headerLine = lines[0];
++  const headers = parseCsvLine(headerLine).map((h) => h.trim().toLowerCase());
++
++  const getIdx = (candidates: string[]): number => {
++    return headers.findIndex((h) => candidates.some((c) => h === c.toLowerCase() || h.includes(c.toLowerCase())));
+   };
++
++  const sourceIdx = getIdx(["source"]);
++  const yearIdx = getIdx(["year"]);
++  const scopeIdx = getIdx(["scope"]);
++  const activityIdx = getIdx(["activity / fuel type", "activity", "fuel type", "fuel"]);
++  const unitIdx = getIdx(["unit"]);
++  const factorIdx = getIdx(["emission factor", "factor", "value"]);
++  const factorUnitIdx = getIdx(["emission factor unit", "factor unit"]);
++  const ghgIdx = getIdx(["ghg / gas", "ghg", "gas"]);
++  const regionIdx = getIdx(["geography / region", "geography", "region", "country"]);
++  const notesIdx = getIdx(["notes", "note", "description"]);
++  const refIdx = getIdx(["reference / evidence", "reference", "evidence", "document", "source document"]);
++
++  const rows: EmissionFactorMasterRow[] = [];
++
++  for (let i = 1; i < lines.length; i++) {
++    const cols = parseCsvLine(lines[i]);
++    if (!cols.length || cols.every((c) => !c.trim())) continue;
++
++    const source = (sourceIdx >= 0 ? cols[sourceIdx] : "")?.trim() || "Standard";
++    const yearStr = (yearIdx >= 0 ? cols[yearIdx] : "")?.trim();
++    const year = parseInt(yearStr, 10);
++    const scopeRaw = (scopeIdx >= 0 ? cols[scopeIdx] : "")?.trim() || "Scope 1";
++    const scope = scopeRaw.toLowerCase().includes("2") ? "Scope 2" : "Scope 1";
++    const activity = (activityIdx >= 0 ? cols[activityIdx] : "")?.trim() || "";
++    const unit = (unitIdx >= 0 ? cols[unitIdx] : "")?.trim() || "";
++    const factorRaw = (factorIdx >= 0 ? cols[factorIdx] : "")?.trim() || "";
++    const factorVal = parseFloat(factorRaw.replace(/,/g, ""));
++    const emissionFactorUnit = (factorUnitIdx >= 0 ? cols[factorUnitIdx] : "")?.trim() || "tCO2e / unit";
++    const ghgGas = (ghgIdx >= 0 ? cols[ghgIdx] : "")?.trim() || "CO2e";
++    const region = (regionIdx >= 0 ? cols[regionIdx] : "")?.trim() || "Global";
++    const notes = (notesIdx >= 0 ? cols[notesIdx] : "")?.trim() || "";
++    const reference = (refIdx >= 0 ? cols[refIdx] : "")?.trim() || "";
++
++    if (!isNaN(year) && !isNaN(factorVal) && activity) {
++      rows.push({
++        source,
++        year,
++        scope,
++        activity,
++        unit,
++        emissionFactor: factorVal,
++        emissionFactorUnit,
++        ghgGas,
++        region,
++        notes,
++        reference,
++      });
++    }
++  }
++
++  return rows;
+ }
+ 
+-// Official CEA India Grid Weighted Average Emission Factors (Table S / Annexure-I / Appendix C)
+-// Converted to tCO2e / kWh (1 tCO2 / MWh = 0.001 tCO2e / kWh):
+-// - FY25 (2024-25) & FY26: 0.710 tCO2 / MWh => 0.000710 tCO2e / kWh
+-// - FY24 (2023-24): 0.727 tCO2 / MWh => 0.000727 tCO2e / kWh
+-// - FY23 (2022-23): 0.716 tCO2 / MWh => 0.000716 tCO2e / kWh
+-// - FY22 (2021-22): 0.715 tCO2 / MWh => 0.000715 tCO2e / kWh
+-// - FY21 (2020-21): 0.703 tCO2 / MWh => 0.000703 tCO2e / kWh
+-// - FY20 (2019-20): 0.713 tCO2 / MWh => 0.000713 tCO2e / kWh
+-const CEA_GRID_FACTORS_BY_YEAR: Record<number, number> = {
+-  2020: 0.713 / 1000,
+-  2021: 0.703 / 1000,
+-  2022: 0.715 / 1000,
+-  2023: 0.716 / 1000,
+-  2024: 0.727 / 1000,
+-  2025: 0.710 / 1000,
+-  2026: 0.710 / 1000,
+-};
++function parseCsvLine(line: string): string[] {
++  const result: string[] = [];
++  let current = "";
++  let inQuotes = false;
+ 
+-function ceaFactor(year: number): EmissionFactor {
+-  const value = CEA_GRID_FACTORS_BY_YEAR[year] ?? 0.710 / 1000;
+-  return {
+-    value,
+-    unit: "tCO2e / kWh",
+-    source: CEA_SOURCE,
+-    publisher: "CEA India",
+-    document: "CO2 Baseline Database for the Indian Power Sector (v21.0)",
+-    year,
++  for (let i = 0; i < line.length; i++) {
++    const char = line[i];
++    if (char === '"') {
++      if (inQuotes && line[i + 1] === '"') {
++        current += '"';
++        i++;
++      } else {
++        inQuotes = !inQuotes;
++      }
++    } else if (char === "," && !inQuotes) {
++      result.push(current.trim());
++      current = "";
++    } else {
++      current += char;
++    }
++  }
++  result.push(current.trim());
++  return result;
++}
++
++function generateCsv(rows: EmissionFactorMasterRow[]): string {
++  const header = [
++    "Source",
++    "Year",
++    "Scope",
++    "Activity / Fuel Type",
++    "Unit",
++    "Emission Factor",
++    "Emission Factor Unit",
++    "GHG / Gas",
++    "Geography / Region",
++    "Notes",
++    "Reference / Evidence",
++  ].join(",");
++
++  const escapeCell = (val: string | number) => {
++    const s = String(val ?? "");
++    if (s.includes(",") || s.includes('"') || s.includes("\n")) {
++      return `"${s.replace(/"/g, '""')}"`;
++    }
++    return s;
+   };
++
++  const lines = rows.map((r) =>
++    [
++      escapeCell(r.source),
++      r.year,
++      escapeCell(r.scope),
++      escapeCell(r.activity),
++      escapeCell(r.unit),
++      r.emissionFactor,
++      escapeCell(r.emissionFactorUnit),
++      escapeCell(r.ghgGas),
++      escapeCell(r.region),
++      escapeCell(r.notes),
++      escapeCell(r.reference),
++    ].join(","),
++  );
++
++  return [header, ...lines].join("\n");
+ }
+ 
+-export const FUEL_TYPES: FuelType[] = [...FUELS];
++/**
++ * Finds or automatically provisions the Emission Factor Master Dataset Google Sheet in Drive.
++ */
++export async function getOrCreateMasterSheetId(): Promise<string | null> {
++  const configuredId = process.env.EMISSION_FACTORS_SHEET_ID || process.env.GOOGLE_SHEETS_EMISSION_FACTORS_ID;
++  if (configuredId) return configuredId;
+ 
+-export const defraDesnzFactors: Record<number, Record<FuelType, EmissionFactor>> =
+-  Object.fromEntries(
+-    DEFRA_YEARS.map((year) => [
+-      year,
+-      Object.fromEntries(FUELS.map((fuel) => [fuel, defraFactor(fuel, year)])),
+-    ]),
+-  ) as Record<number, Record<FuelType, EmissionFactor>>;
++  const drive = getDriveClient();
++  if (!drive) return null;
+ 
+-export const ceaIndiaGridFactors: Record<number, EmissionFactor> = Object.fromEntries(
+-  DEFRA_YEARS.map((year) => [year, ceaFactor(year)]),
+-) as Record<number, EmissionFactor>;
++  const rootFolderId = getRootFolderId();
++  try {
++    const existing = await findChild(rootFolderId, MASTER_SHEET_NAME);
++    if (existing?.id) return existing.id;
+ 
+-export const ipccEfdbReference = {
+-  source: IPCC_SOURCE,
+-  publisher: "IPCC",
+-  document: "IPCC Emission Factor Database (EFDB)",
+-};
++    // Create the master spreadsheet
++    const csvContent = generateCsv(MASTER_DATASET_SEED);
++    const created = await drive.files.create({
++      requestBody: {
++        name: MASTER_SHEET_NAME,
++        mimeType: "application/vnd.google-apps.spreadsheet",
++        parents: [rootFolderId],
++      },
++      media: {
++        mimeType: "text/csv",
++        body: Readable.from(Buffer.from(csvContent, "utf8")),
++      },
++      fields: "id",
++      supportsAllDrives: true,
++    });
++
++    return created.data.id ?? null;
++  } catch {
++    return null;
++  }
++}
++
++/**
++ * Dynamically fetches the Emission Factor Master Dataset from Google Sheets.
++ */
++export async function fetchEmissionFactorsFromGoogleSheet(forceRefresh = false): Promise<EmissionFactorMasterRow[]> {
++  const now = Date.now();
++  if (!forceRefresh && cachedMasterRows && now - cacheTimestamp < CACHE_TTL_MS) {
++    return cachedMasterRows;
++  }
++
++  const drive = getDriveClient();
++  if (drive) {
++    try {
++      const sheetId = await getOrCreateMasterSheetId();
++      if (sheetId) {
++        const exportRes = await drive.files.export(
++          {
++            fileId: sheetId,
++            mimeType: "text/csv",
++          },
++          { responseType: "text" },
++        );
++
++        const csvText = String(exportRes.data ?? "");
++        const rows = parseCsv(csvText);
++        if (rows.length > 0) {
++          cachedMasterRows = rows;
++          cacheTimestamp = now;
++          return rows;
++        }
++      }
++    } catch {
++      // If network / API fails, use cached or fallback seed
++    }
++  }
++
++  cachedMasterRows = MASTER_DATASET_SEED;
++  cacheTimestamp = now;
++  return MASTER_DATASET_SEED;
++}
++
++export function clearEmissionFactorsCache(): void {
++  cachedMasterRows = null;
++  cacheTimestamp = 0;
++}
++
++/**
++ * Searches the dynamic Google Sheet emission factor dataset for the best match.
++ */
++export async function findEmissionFactorFromMaster(params: {
++  scope: Scope | "Scope 1" | "Scope 2";
++  activity: string;
++  year: number;
++  source?: string;
++  region?: string;
++}): Promise<EmissionFactor | null> {
++  const masterRows = await fetchEmissionFactorsFromGoogleSheet();
++  const normalizedScope = params.scope.toLowerCase().replace(/\s+/g, "");
++  const normalizedActivity = params.activity.toLowerCase().trim();
++  const requestedSource = params.source?.toUpperCase().trim();
++  const requestedRegion = params.region?.toLowerCase().trim();
++
++  // 1. Filter by Scope & Activity
++  const matchingScopeAndActivity = masterRows.filter((row) => {
++    const rowScope = row.scope.toLowerCase().replace(/\s+/g, "");
++    if (rowScope !== normalizedScope) return false;
++
++    const rowAct = row.activity.toLowerCase().trim();
++    if (rowAct === normalizedActivity) return true;
++
++    // Synonyms / normalized matching
++    if (
++      (normalizedActivity === "electricity" || normalizedActivity === "grid electricity") &&
++      (rowAct === "electricity" || rowAct === "grid electricity")
++    ) {
++      return true;
++    }
++    if (
++      (normalizedActivity === "petrol" || normalizedActivity === "gasoline") &&
++      (rowAct === "petrol" || rowAct === "gasoline")
++    ) {
++      return true;
++    }
++
++    return false;
++  });
++
++  if (!matchingScopeAndActivity.length) {
++    return null;
++  }
++
++  // 2. Filter by Source if requested, or select best source (e.g. DEFRA for Scope 1, CEA for Scope 2 India)
++  let candidateRows = matchingScopeAndActivity;
++  if (requestedSource) {
++    const bySource = candidateRows.filter((r) => r.source.toUpperCase() === requestedSource);
++    if (bySource.length) candidateRows = bySource;
++  } else if (requestedRegion) {
++    const byRegion = candidateRows.filter(
++      (r) => r.region.toLowerCase().includes(requestedRegion) || requestedRegion.includes(r.region.toLowerCase()),
++    );
++    if (byRegion.length) candidateRows = byRegion;
++  } else {
++    // Default source preference
++    if (normalizedScope === "scope1") {
++      const defraRows = candidateRows.filter((r) => r.source.toUpperCase() === "DEFRA");
++      if (defraRows.length) candidateRows = defraRows;
++    } else if (normalizedScope === "scope2") {
++      const ceaRows = candidateRows.filter((r) => r.source.toUpperCase() === "CEA");
++      if (ceaRows.length) candidateRows = ceaRows;
++    }
++  }
++
++  // 3. Match Year (Exact match, or closest available year)
++  let chosenRow = candidateRows.find((r) => r.year === params.year);
++  if (!chosenRow) {
++    // Find closest year
++    candidateRows.sort((a, b) => Math.abs(a.year - params.year) - Math.abs(b.year - params.year));
++    chosenRow = candidateRows[0];
++  }
++
++  if (!chosenRow) return null;
++
++  return {
++    value: chosenRow.emissionFactor,
++    unit: chosenRow.emissionFactorUnit || chosenRow.unit,
++    source: chosenRow.source,
++    publisher: chosenRow.source,
++    document: chosenRow.reference || chosenRow.notes || `${chosenRow.source} Emission Factors`,
++    year: chosenRow.year,
++    activity: chosenRow.activity,
++    ghgGas: chosenRow.ghgGas,
++    region: chosenRow.region,
++    notes: chosenRow.notes,
++    reference: chosenRow.reference,
++  };
++}
++
++/**
++ * Fetch Scope 1 factor dynamically from Google Sheet master dataset.
++ */
++export async function getScope1Factor(
++  fuel: FuelType | string,
++  year: number,
++  source?: string,
++): Promise<EmissionFactor | null> {
++  return findEmissionFactorFromMaster({
++    scope: "Scope 1",
++    activity: fuel,
++    year,
++    source,
++  });
++}
++
++/**
++ * Fetch Scope 2 factor dynamically from Google Sheet master dataset.
++ */
++export async function getScope2Factor(
++  year: number,
++  source?: string,
++  activity = "Electricity",
++): Promise<EmissionFactor | null> {
++  return findEmissionFactorFromMaster({
++    scope: "Scope 2",
++    activity,
++    year,
++    source,
++  });
++}
+ 
+-export function getScope1Factor(fuel: FuelType, year: number): EmissionFactor | null {
+-  return defraDesnzFactors[year]?.[fuel] ?? defraFactor(fuel, year);
++/**
++ * Synchronous helper using cached / seed rows.
++ */
++export function getScope1FactorSync(
++  fuel: FuelType | string,
++  year: number,
++  source = "DEFRA",
++): EmissionFactor | null {
++  const rows = cachedMasterRows ?? MASTER_DATASET_SEED;
++  const match = rows.find(
++    (r) =>
++      r.scope.toLowerCase().replace(/\s+/g, "") === "scope1" &&
++      r.activity.toLowerCase() === fuel.toLowerCase() &&
++      r.source.toUpperCase() === source.toUpperCase() &&
++      r.year === year,
++  );
++  if (match) {
++    return {
++      value: match.emissionFactor,
++      unit: match.emissionFactorUnit,
++      source: match.source,
++      publisher: match.source,
++      document: match.reference,
++      year: match.year,
++    };
++  }
++  // Fallback to any year for this fuel
++  const fallback = rows.find(
++    (r) =>
++      r.scope.toLowerCase().replace(/\s+/g, "") === "scope1" &&
++      r.activity.toLowerCase() === fuel.toLowerCase(),
++  );
++  if (fallback) {
++    return {
++      value: fallback.emissionFactor,
++      unit: fallback.emissionFactorUnit,
++      source: fallback.source,
++      publisher: fallback.source,
++      document: fallback.reference,
++      year: fallback.year,
++    };
++  }
++  return null;
+ }
+ 
+-export function getScope2Factor(year: number): EmissionFactor | null {
+-  return ceaIndiaGridFactors[year] ?? ceaFactor(year);
++/**
++ * Synchronous helper using cached / seed rows.
++ */
++export function getScope2FactorSync(
++  year: number,
++  source = "CEA",
++  activity = "Electricity",
++): EmissionFactor | null {
++  const rows = cachedMasterRows ?? MASTER_DATASET_SEED;
++  const match = rows.find(
++    (r) =>
++      r.scope.toLowerCase().replace(/\s+/g, "") === "scope2" &&
++      r.activity.toLowerCase().includes(activity.toLowerCase()) &&
++      r.source.toUpperCase() === source.toUpperCase() &&
++      r.year === year,
++  );
++  if (match) {
++    return {
++      value: match.emissionFactor,
++      unit: match.emissionFactorUnit,
++      source: match.source,
++      publisher: match.source,
++      document: match.reference,
++      year: match.year,
++    };
++  }
++  const fallback = rows.find(
++    (r) =>
++      r.scope.toLowerCase().replace(/\s+/g, "") === "scope2" &&
++      r.source.toUpperCase() === source.toUpperCase(),
++  );
++  if (fallback) {
++    return {
++      value: fallback.emissionFactor,
++      unit: fallback.emissionFactorUnit,
++      source: fallback.source,
++      publisher: fallback.source,
++      document: fallback.reference,
++      year: fallback.year,
++    };
++  }
++  return null;
+ }
+diff --git a/lib/excel.ts b/lib/excel.ts
+index ce74ad3..63404f9 100644
+--- a/lib/excel.ts
++++ b/lib/excel.ts
+@@ -84,10 +84,10 @@ export type ParseResult<T> =
+   | { ok: true; records: T[] }
+   | { ok: false; errors: string[] };
+ 
+-export function parseScope1Excel(
++export async function parseScope1Excel(
+   buffer: Buffer,
+-  ctx: { reportingYear: string; facilityId: string; facilityName: string },
+-): ParseResult<Scope1Record> {
++  ctx: { reportingYear: string; facilityId: string; facilityName: string; source?: string },
++): Promise<ParseResult<Scope1Record>> {
+   let rows: Record<string, unknown>[];
+   try {
+     rows = parseWorkbook(buffer);
+@@ -102,7 +102,13 @@ export function parseScope1Excel(
+   if (!year) return { ok: false, errors: ["Reporting year is invalid. Use FY20ÔÇôFY26."] };
+ 
+   const errors: string[] = [];
+-  const records: Scope1Record[] = [];
++  const validRows: Array<{
++    equipmentName: string;
++    sourceType: SourceType;
++    fuelType: FuelType;
++    quantity: number;
++    unit: string;
++  }> = [];
+ 
+   rows.forEach((row, index) => {
+     const n = excelRowNumber(index);
+@@ -149,36 +155,48 @@ export function parseScope1Excel(
+     if (!unit) errors.push(`Row ${n}: Unit is blank.`);
+ 
+     if (equipmentName && sourceType && fuelType && quantity !== null && quantity >= 0 && unit) {
+-      const factor = getScope1Factor(fuelType, year);
+-      const factorValue = factor?.value ?? null;
+-      records.push({
++      validRows.push({
+         equipmentName,
+         sourceType,
+         fuelType,
+         quantity,
+         unit,
+-        emissionFactor: factorValue,
+-        emissionFactorUnit: factor?.unit ?? "",
+-        emissionFactorSource: factor
+-          ? `${factor.publisher} ${factor.year} ÔÇö ${factor.document}`
+-          : "Emission factor unavailable",
+-        emissions: factorValue === null ? null : quantity * factorValue,
+-        reportingYear: ctx.reportingYear,
+-        facilityId: ctx.facilityId,
+-        facilityName: ctx.facilityName,
+       });
+     }
+   });
+ 
+   if (errors.length) return { ok: false, errors };
+-  if (!records.length) return { ok: false, errors: ["The spreadsheet has no valid data rows."] };
++  if (!validRows.length) return { ok: false, errors: ["The spreadsheet has no valid data rows."] };
++
++  const records: Scope1Record[] = [];
++  for (const item of validRows) {
++    const factor = await getScope1Factor(item.fuelType, year, ctx.source);
++    const factorValue = factor?.value ?? null;
++    records.push({
++      equipmentName: item.equipmentName,
++      sourceType: item.sourceType,
++      fuelType: item.fuelType,
++      quantity: item.quantity,
++      unit: item.unit,
++      emissionFactor: factorValue,
++      emissionFactorUnit: factor?.unit ?? "",
++      emissionFactorSource: factor
++        ? `${factor.publisher} ${factor.year} ÔÇö ${factor.document}`
++        : "Emission factor unavailable",
++      emissions: factorValue === null ? null : item.quantity * factorValue,
++      reportingYear: ctx.reportingYear,
++      facilityId: ctx.facilityId,
++      facilityName: ctx.facilityName,
++    });
++  }
++
+   return { ok: true, records };
+ }
+ 
+-export function parseScope2Excel(
++export async function parseScope2Excel(
+   buffer: Buffer,
+-  ctx: { reportingYear: string; facilityId: string; facilityName: string },
+-): ParseResult<Scope2Record> {
++  ctx: { reportingYear: string; facilityId: string; facilityName: string; source?: string },
++): Promise<ParseResult<Scope2Record>> {
+   let rows: Record<string, unknown>[];
+   try {
+     rows = parseWorkbook(buffer);
+@@ -193,8 +211,10 @@ export function parseScope2Excel(
+   if (!year) return { ok: false, errors: ["Reporting year is invalid. Use FY20ÔÇôFY26."] };
+ 
+   const errors: string[] = [];
+-  const records: Scope2Record[] = [];
+-  const factor = getScope2Factor(year);
++  const validRows: Array<{
++    source: string;
++    kWh: number;
++  }> = [];
+ 
+   rows.forEach((row, index) => {
+     const n = excelRowNumber(index);
+@@ -215,24 +235,32 @@ export function parseScope2Excel(
+     }
+ 
+     if (source && kWh !== null && kWh >= 0) {
+-      const factorValue = factor?.value ?? null;
+-      records.push({
+-        electricitySource: source,
++      validRows.push({
++        source,
+         kWh,
+-        emissionFactor: factorValue,
+-        emissionFactorUnit: factor?.unit ?? "",
+-        emissionFactorSource: factor
+-          ? `${factor.publisher} ${factor.year} ÔÇö ${factor.document}`
+-          : "Emission factor unavailable",
+-        emissions: factorValue === null ? null : kWh * factorValue,
+-        reportingYear: ctx.reportingYear,
+-        facilityId: ctx.facilityId,
+-        facilityName: ctx.facilityName,
+       });
+     }
+   });
+ 
+   if (errors.length) return { ok: false, errors };
+-  if (!records.length) return { ok: false, errors: ["The spreadsheet has no valid data rows."] };
++  if (!validRows.length) return { ok: false, errors: ["The spreadsheet has no valid data rows."] };
++
++  const factor = await getScope2Factor(year, ctx.source);
++  const factorValue = factor?.value ?? null;
++
++  const records: Scope2Record[] = validRows.map((item) => ({
++    electricitySource: item.source,
++    kWh: item.kWh,
++    emissionFactor: factorValue,
++    emissionFactorUnit: factor?.unit ?? "",
++    emissionFactorSource: factor
++      ? `${factor.publisher} ${factor.year} ÔÇö ${factor.document}`
++      : "Emission factor unavailable",
++    emissions: factorValue === null ? null : item.kWh * factorValue,
++    reportingYear: ctx.reportingYear,
++    facilityId: ctx.facilityId,
++    facilityName: ctx.facilityName,
++  }));
++
+   return { ok: true, records };
+ }
+diff --git a/lib/types.ts b/lib/types.ts
+index 0333f79..f6dc80b 100644
+--- a/lib/types.ts
++++ b/lib/types.ts
+@@ -47,6 +47,11 @@ export type EmissionFactor = {
+   publisher: string;
+   document: string;
+   year: number;
++  activity?: string;
++  ghgGas?: string;
++  region?: string;
++  notes?: string;
++  reference?: string;
+ };
+ 
+ export type Scope1Record = {
+diff --git a/middleware.ts b/middleware.ts
+index 5ffe7a5..882623b 100644
+--- a/middleware.ts
++++ b/middleware.ts
+@@ -54,7 +54,10 @@ export async function middleware(request: NextRequest) {
+ 
+   const isAuthPage = PUBLIC_PATHS.has(pathname);
+   const isProtectedPage =
+-    pathname.startsWith("/dashboard") || pathname.startsWith("/upload") || pathname.startsWith("/setup");
++    pathname.startsWith("/dashboard") ||
++    pathname.startsWith("/upload") ||
++    pathname.startsWith("/setup") ||
++    pathname.startsWith("/profile");
+   const isProtectedApi =
+     pathname.startsWith("/api/") &&
+     !pathname.startsWith("/api/auth/login") &&
+@@ -70,25 +73,22 @@ export async function middleware(request: NextRequest) {
+     }
+     const url = request.nextUrl.clone();
+     url.pathname = "/login";
+-    url.searchParams.set("from", pathname);
+     return NextResponse.redirect(url);
+   }
+ 
+   if (session && isAuthPage) {
+-    const url = request.nextUrl.clone();
+-    url.pathname = session.setupComplete ? "/dashboard" : "/setup";
+-    return NextResponse.redirect(url);
+-  }
+-
+-  if (session && (pathname.startsWith("/dashboard") || pathname.startsWith("/upload")) && !session.setupComplete) {
+     const url = request.nextUrl.clone();
+     url.pathname = "/setup";
+     return NextResponse.redirect(url);
+   }
+ 
+-  if (session && pathname.startsWith("/setup") && session.setupComplete) {
++  if (
++    session &&
++    (pathname.startsWith("/dashboard") || pathname.startsWith("/upload") || pathname.startsWith("/profile")) &&
++    !session.setupComplete
++  ) {
+     const url = request.nextUrl.clone();
+-    url.pathname = "/dashboard";
++    url.pathname = "/setup";
+     return NextResponse.redirect(url);
+   }
+ 
+@@ -104,6 +104,7 @@ export const config = {
+     "/dashboard/:path*",
+     "/upload/:path*",
+     "/setup/:path*",
++    "/profile/:path*",
+     "/api/:path*",
+   ],
+ };
+diff --git a/scripts/test-excel.ts b/scripts/test-excel.ts
+index 1cce374..160d7c7 100644
+--- a/scripts/test-excel.ts
++++ b/scripts/test-excel.ts
+@@ -31,30 +31,37 @@ function mustFail(label: string, result: { ok: boolean; records?: unknown[]; err
+   console.log(label, "rejected with", result.errors.length, "errors");
+ }
+ 
+-mustOk("Scope1_FY25", parseScope1Excel(sample("Scope1_FY25.xlsx"), ctx));
+-mustOk("Scope1_FY26", parseScope1Excel(sample("Scope1_FY26.xlsx"), { ...ctx, reportingYear: "FY26" }));
+-mustOk("Scope2_FY25", parseScope2Excel(sample("Scope2_FY25.xlsx"), ctx));
+-mustOk("Scope2_FY26", parseScope2Excel(sample("Scope2_FY26.xlsx"), { ...ctx, reportingYear: "FY26" }));
+-mustFail("Scope1_wrong_fuel", parseScope1Excel(sample("Scope1_wrong_fuel.xlsx"), ctx), 4);
+-
+-const validS1 = parseScope1Excel(sample("Scope1_FY25.xlsx"), ctx);
+-if (!validS1.ok || !validS1.records.every((r) => typeof r.emissions === "number" && r.emissions > 0)) {
+-  console.error("Scope 1 emissions calculation failed or returned non-positive numbers");
+-  process.exitCode = 1;
+-} else {
+-  console.log("Scope 1 emissions verified:", validS1.records.length, "rows calculated successfully");
+-}
++async function main() {
++  mustOk("Scope1_FY25", await parseScope1Excel(sample("Scope1_FY25.xlsx"), ctx));
++  mustOk("Scope1_FY26", await parseScope1Excel(sample("Scope1_FY26.xlsx"), { ...ctx, reportingYear: "FY26" }));
++  mustOk("Scope2_FY25", await parseScope2Excel(sample("Scope2_FY25.xlsx"), ctx));
++  mustOk("Scope2_FY26", await parseScope2Excel(sample("Scope2_FY26.xlsx"), { ...ctx, reportingYear: "FY26" }));
++  mustFail("Scope1_wrong_fuel", await parseScope1Excel(sample("Scope1_wrong_fuel.xlsx"), ctx), 4);
+ 
+-const validS2 = parseScope2Excel(sample("Scope2_FY25.xlsx"), ctx);
+-if (!validS2.ok || !validS2.records.every((r) => typeof r.emissions === "number" && r.emissions > 0)) {
+-  console.error("Scope 2 emissions calculation failed or returned non-positive numbers");
+-  process.exitCode = 1;
+-} else {
+-  console.log("Scope 2 emissions verified:", validS2.records.length, "rows calculated successfully");
+-}
++  const validS1 = await parseScope1Excel(sample("Scope1_FY25.xlsx"), ctx);
++  if (!validS1.ok || !validS1.records.every((r) => typeof r.emissions === "number" && r.emissions > 0)) {
++    console.error("Scope 1 emissions calculation failed or returned non-positive numbers");
++    process.exitCode = 1;
++  } else {
++    console.log("Scope 1 emissions verified:", validS1.records.length, "rows calculated successfully");
++  }
+ 
+-if (process.exitCode) {
+-  console.error("excel tests failed");
+-} else {
+-  console.log("excel tests passed");
++  const validS2 = await parseScope2Excel(sample("Scope2_FY25.xlsx"), ctx);
++  if (!validS2.ok || !validS2.records.every((r) => typeof r.emissions === "number" && r.emissions > 0)) {
++    console.error("Scope 2 emissions calculation failed or returned non-positive numbers");
++    process.exitCode = 1;
++  } else {
++    console.log("Scope 2 emissions verified:", validS2.records.length, "rows calculated successfully");
++  }
++
++  if (process.exitCode) {
++    console.error("excel tests failed");
++  } else {
++    console.log("excel tests passed");
++  }
+ }
++
++main().catch((err) => {
++  console.error("Error running test-excel:", err);
++  process.exit(1);
++});

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createCompanyStub } from "@/lib/company";
-import { setSessionCookie } from "@/lib/session";
 import { createUser, emailExists } from "@/lib/users";
 
 export const runtime = "nodejs";
@@ -22,15 +21,9 @@ export async function POST(request: Request) {
     }
 
     const company = await createCompanyStub();
-    const user = await createUser(email, password, company.id);
-    await setSessionCookie({
-      userId: user.id,
-      email: user.email,
-      companyId: company.id,
-      setupComplete: false,
-    });
+    await createUser(email, password, company.id);
 
-    return NextResponse.json({ ok: true, redirectTo: "/setup" });
+    return NextResponse.json({ ok: true, redirectTo: "/login" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Signup failed";
     const status = message.includes("already exists") ? 409 : 500;

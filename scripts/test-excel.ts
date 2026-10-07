@@ -31,30 +31,37 @@ function mustFail(label: string, result: { ok: boolean; records?: unknown[]; err
   console.log(label, "rejected with", result.errors.length, "errors");
 }
 
-mustOk("Scope1_FY25", parseScope1Excel(sample("Scope1_FY25.xlsx"), ctx));
-mustOk("Scope1_FY26", parseScope1Excel(sample("Scope1_FY26.xlsx"), { ...ctx, reportingYear: "FY26" }));
-mustOk("Scope2_FY25", parseScope2Excel(sample("Scope2_FY25.xlsx"), ctx));
-mustOk("Scope2_FY26", parseScope2Excel(sample("Scope2_FY26.xlsx"), { ...ctx, reportingYear: "FY26" }));
-mustFail("Scope1_wrong_fuel", parseScope1Excel(sample("Scope1_wrong_fuel.xlsx"), ctx), 4);
+async function main() {
+  mustOk("Scope1_FY25", await parseScope1Excel(sample("Scope1_FY25.xlsx"), ctx));
+  mustOk("Scope1_FY26", await parseScope1Excel(sample("Scope1_FY26.xlsx"), { ...ctx, reportingYear: "FY26" }));
+  mustOk("Scope2_FY25", await parseScope2Excel(sample("Scope2_FY25.xlsx"), ctx));
+  mustOk("Scope2_FY26", await parseScope2Excel(sample("Scope2_FY26.xlsx"), { ...ctx, reportingYear: "FY26" }));
+  mustFail("Scope1_wrong_fuel", await parseScope1Excel(sample("Scope1_wrong_fuel.xlsx"), ctx), 4);
 
-const validS1 = parseScope1Excel(sample("Scope1_FY25.xlsx"), ctx);
-if (!validS1.ok || !validS1.records.every((r) => typeof r.emissions === "number" && r.emissions > 0)) {
-  console.error("Scope 1 emissions calculation failed or returned non-positive numbers");
-  process.exitCode = 1;
-} else {
-  console.log("Scope 1 emissions verified:", validS1.records.length, "rows calculated successfully");
+  const validS1 = await parseScope1Excel(sample("Scope1_FY25.xlsx"), ctx);
+  if (!validS1.ok || !validS1.records.every((r) => typeof r.emissions === "number" && r.emissions > 0)) {
+    console.error("Scope 1 emissions calculation failed or returned non-positive numbers");
+    process.exitCode = 1;
+  } else {
+    console.log("Scope 1 emissions verified:", validS1.records.length, "rows calculated successfully");
+  }
+
+  const validS2 = await parseScope2Excel(sample("Scope2_FY25.xlsx"), ctx);
+  if (!validS2.ok || !validS2.records.every((r) => typeof r.emissions === "number" && r.emissions > 0)) {
+    console.error("Scope 2 emissions calculation failed or returned non-positive numbers");
+    process.exitCode = 1;
+  } else {
+    console.log("Scope 2 emissions verified:", validS2.records.length, "rows calculated successfully");
+  }
+
+  if (process.exitCode) {
+    console.error("excel tests failed");
+  } else {
+    console.log("excel tests passed");
+  }
 }
 
-const validS2 = parseScope2Excel(sample("Scope2_FY25.xlsx"), ctx);
-if (!validS2.ok || !validS2.records.every((r) => typeof r.emissions === "number" && r.emissions > 0)) {
-  console.error("Scope 2 emissions calculation failed or returned non-positive numbers");
-  process.exitCode = 1;
-} else {
-  console.log("Scope 2 emissions verified:", validS2.records.length, "rows calculated successfully");
-}
-
-if (process.exitCode) {
-  console.error("excel tests failed");
-} else {
-  console.log("excel tests passed");
-}
+main().catch((err) => {
+  console.error("Error running test-excel:", err);
+  process.exit(1);
+});

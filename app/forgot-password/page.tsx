@@ -44,7 +44,7 @@ export default function ForgotPasswordPage() {
     >
       <form onSubmit={onSubmit}>
         <Field label="Email">
-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required suppressHydrationWarning />
         </Field>
         {error ? <div className="mb-4"><Alert tone="error">{error}</Alert></div> : null}
         {message ? <div className="mb-4"><Alert tone="success">{message}</Alert></div> : null}

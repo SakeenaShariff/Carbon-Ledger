@@ -158,39 +158,43 @@ export async function listCompanyDatasets(company: CompanyProfile): Promise<{
         years.add(yearFolder.name);
         if (isScope1) {
           const loaded = await readJson<LoadedScope1>(processed.id);
-          const enrichedRecords = (loaded.records || []).map((r) => {
-            if (r.emissions !== null && r.emissions !== undefined) return r;
-            const calYear = reportingYearToCalendarYear(r.reportingYear) || 2025;
-            const factor = getScope1Factor(r.fuelType, calYear);
-            const factorValue = factor?.value ?? null;
-            return {
-              ...r,
-              emissionFactor: r.emissionFactor ?? factorValue,
-              emissionFactorUnit: r.emissionFactorUnit || factor?.unit || "",
-              emissionFactorSource: factor
-                ? `${factor.publisher} ${factor.year} — ${factor.document}`
-                : r.emissionFactorSource,
-              emissions: factorValue !== null && r.quantity != null ? r.quantity * factorValue : null,
-            };
-          });
+          const enrichedRecords = await Promise.all(
+            (loaded.records || []).map(async (r) => {
+              if (r.emissions !== null && r.emissions !== undefined) return r;
+              const calYear = reportingYearToCalendarYear(r.reportingYear) || 2025;
+              const factor = await getScope1Factor(r.fuelType, calYear);
+              const factorValue = factor?.value ?? null;
+              return {
+                ...r,
+                emissionFactor: r.emissionFactor ?? factorValue,
+                emissionFactorUnit: r.emissionFactorUnit || factor?.unit || "",
+                emissionFactorSource: factor
+                  ? `${factor.publisher} ${factor.year} — ${factor.document}`
+                  : r.emissionFactorSource,
+                emissions: factorValue !== null && r.quantity != null ? r.quantity * factorValue : null,
+              };
+            }),
+          );
           scope1.push({ ...loaded, records: enrichedRecords });
         } else {
           const loaded = await readJson<LoadedScope2>(processed.id);
-          const enrichedRecords = (loaded.records || []).map((r) => {
-            if (r.emissions !== null && r.emissions !== undefined) return r;
-            const calYear = reportingYearToCalendarYear(r.reportingYear) || 2025;
-            const factor = getScope2Factor(calYear);
-            const factorValue = factor?.value ?? null;
-            return {
-              ...r,
-              emissionFactor: r.emissionFactor ?? factorValue,
-              emissionFactorUnit: r.emissionFactorUnit || factor?.unit || "",
-              emissionFactorSource: factor
-                ? `${factor.publisher} ${factor.year} — ${factor.document}`
-                : r.emissionFactorSource,
-              emissions: factorValue !== null && r.kWh != null ? r.kWh * factorValue : null,
-            };
-          });
+          const enrichedRecords = await Promise.all(
+            (loaded.records || []).map(async (r) => {
+              if (r.emissions !== null && r.emissions !== undefined) return r;
+              const calYear = reportingYearToCalendarYear(r.reportingYear) || 2025;
+              const factor = await getScope2Factor(calYear);
+              const factorValue = factor?.value ?? null;
+              return {
+                ...r,
+                emissionFactor: r.emissionFactor ?? factorValue,
+                emissionFactorUnit: r.emissionFactorUnit || factor?.unit || "",
+                emissionFactorSource: factor
+                  ? `${factor.publisher} ${factor.year} — ${factor.document}`
+                  : r.emissionFactorSource,
+                emissions: factorValue !== null && r.kWh != null ? r.kWh * factorValue : null,
+              };
+            }),
+          );
           scope2.push({ ...loaded, records: enrichedRecords });
         }
       }

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { Alert, Field } from "@/components/ui";
@@ -16,6 +16,26 @@ export default function SetupPage() {
   const [facilities, setFacilities] = useState<FacilityDraft[]>([{ name: "", address: "" }]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/session")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.company?.name) {
+          setName(data.company.name);
+          if (data.company.facilities?.length) {
+            setFacilityCount(String(data.company.facilities.length));
+            setFacilities(
+              data.company.facilities.map((f: { name?: string; address?: string }) => ({
+                name: f.name ?? "",
+                address: f.address ?? "",
+              })),
+            );
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const count = useMemo(() => {
     const n = Number(facilityCount);
@@ -70,16 +90,16 @@ export default function SetupPage() {
       <form className="mt-8 max-w-3xl space-y-6" onSubmit={onSubmit}>
         <div className="card grid gap-4 md:grid-cols-2">
           <Field label="Company name">
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} required suppressHydrationWarning />
           </Field>
           <Field label="Industry">
-            <input className="input" value={industry} onChange={(e) => setIndustry(e.target.value)} required />
+            <input className="input" value={industry} onChange={(e) => setIndustry(e.target.value)} required suppressHydrationWarning />
           </Field>
           <Field label="Employee count">
-            <input className="input" type="number" min={1} value={employeeCount} onChange={(e) => setEmployeeCount(e.target.value)} required />
+            <input className="input" type="number" min={1} value={employeeCount} onChange={(e) => setEmployeeCount(e.target.value)} required suppressHydrationWarning />
           </Field>
           <Field label="Number of facilities">
-            <input className="input" type="number" min={1} max={50} value={facilityCount} onChange={(e) => updateCount(e.target.value)} required />
+            <input className="input" type="number" min={1} max={50} value={facilityCount} onChange={(e) => updateCount(e.target.value)} required suppressHydrationWarning />
           </Field>
         </div>
         <div className="space-y-4">
@@ -95,6 +115,7 @@ export default function SetupPage() {
                     setFacilities((prev) => prev.map((item, i) => (i === index ? { ...item, name: e.target.value } : item)))
                   }
                   required
+                  suppressHydrationWarning
                 />
               </Field>
               <Field label="Address">
@@ -105,6 +126,7 @@ export default function SetupPage() {
                     setFacilities((prev) => prev.map((item, i) => (i === index ? { ...item, address: e.target.value } : item)))
                   }
                   required
+                  suppressHydrationWarning
                 />
               </Field>
             </div>

@@ -84,10 +84,10 @@ export type ParseResult<T> =
   | { ok: true; records: T[] }
   | { ok: false; errors: string[] };
 
-export function parseScope1Excel(
+export async function parseScope1Excel(
   buffer: Buffer,
-  ctx: { reportingYear: string; facilityId: string; facilityName: string },
-): ParseResult<Scope1Record> {
+  ctx: { reportingYear: string; facilityId: string; facilityName: string; source?: string },
+): Promise<ParseResult<Scope1Record>> {
   let rows: Record<string, unknown>[];
   try {
     rows = parseWorkbook(buffer);
@@ -102,7 +102,13 @@ export function parseScope1Excel(
   if (!year) return { ok: false, errors: ["Reporting year is invalid. Use FY20–FY26."] };
 
   const errors: string[] = [];
-  const records: Scope1Record[] = [];
+  const validRows: Array<{
+    equipmentName: string;
+    sourceType: SourceType;
+    fuelType: FuelType;
+    quantity: number;
+    unit: string;
+  }> = [];
 
   rows.forEach((row, index) => {
     const n = excelRowNumber(index);
@@ -149,36 +155,48 @@ export function parseScope1Excel(
     if (!unit) errors.push(`Row ${n}: Unit is blank.`);
 
     if (equipmentName && sourceType && fuelType && quantity !== null && quantity >= 0 && unit) {
-      const factor = getScope1Factor(fuelType, year);
-      const factorValue = factor?.value ?? null;
-      records.push({
+      validRows.push({
         equipmentName,
         sourceType,
         fuelType,
         quantity,
         unit,
-        emissionFactor: factorValue,
-        emissionFactorUnit: factor?.unit ?? "",
-        emissionFactorSource: factor
-          ? `${factor.publisher} ${factor.year} — ${factor.document}`
-          : "Emission factor unavailable",
-        emissions: factorValue === null ? null : quantity * factorValue,
-        reportingYear: ctx.reportingYear,
-        facilityId: ctx.facilityId,
-        facilityName: ctx.facilityName,
       });
     }
   });
 
   if (errors.length) return { ok: false, errors };
-  if (!records.length) return { ok: false, errors: ["The spreadsheet has no valid data rows."] };
+  if (!validRows.length) return { ok: false, errors: ["The spreadsheet has no valid data rows."] };
+
+  const records: Scope1Record[] = [];
+  for (const item of validRows) {
+    const factor = await getScope1Factor(item.fuelType, year, ctx.source);
+    const factorValue = factor?.value ?? null;
+    records.push({
+      equipmentName: item.equipmentName,
+      sourceType: item.sourceType,
+      fuelType: item.fuelType,
+      quantity: item.quantity,
+      unit: item.unit,
+      emissionFactor: factorValue,
+      emissionFactorUnit: factor?.unit ?? "",
+      emissionFactorSource: factor
+        ? `${factor.publisher} ${factor.year} — ${factor.document}`
+        : "Emission factor unavailable",
+      emissions: factorValue === null ? null : item.quantity * factorValue,
+      reportingYear: ctx.reportingYear,
+      facilityId: ctx.facilityId,
+      facilityName: ctx.facilityName,
+    });
+  }
+
   return { ok: true, records };
 }
 
-export function parseScope2Excel(
+export async function parseScope2Excel(
   buffer: Buffer,
-  ctx: { reportingYear: string; facilityId: string; facilityName: string },
-): ParseResult<Scope2Record> {
+  ctx: { reportingYear: string; facilityId: string; facilityName: string; source?: string },
+): Promise<ParseResult<Scope2Record>> {
   let rows: Record<string, unknown>[];
   try {
     rows = parseWorkbook(buffer);
@@ -193,8 +211,10 @@ export function parseScope2Excel(
   if (!year) return { ok: false, errors: ["Reporting year is invalid. Use FY20–FY26."] };
 
   const errors: string[] = [];
-  const records: Scope2Record[] = [];
-  const factor = getScope2Factor(year);
+  const validRows: Array<{
+    source: string;
+    kWh: number;
+  }> = [];
 
   rows.forEach((row, index) => {
     const n = excelRowNumber(index);
@@ -215,24 +235,32 @@ export function parseScope2Excel(
     }
 
     if (source && kWh !== null && kWh >= 0) {
-      const factorValue = factor?.value ?? null;
-      records.push({
-        electricitySource: source,
+      validRows.push({
+        source,
         kWh,
-        emissionFactor: factorValue,
-        emissionFactorUnit: factor?.unit ?? "",
-        emissionFactorSource: factor
-          ? `${factor.publisher} ${factor.year} — ${factor.document}`
-          : "Emission factor unavailable",
-        emissions: factorValue === null ? null : kWh * factorValue,
-        reportingYear: ctx.reportingYear,
-        facilityId: ctx.facilityId,
-        facilityName: ctx.facilityName,
       });
     }
   });
 
   if (errors.length) return { ok: false, errors };
-  if (!records.length) return { ok: false, errors: ["The spreadsheet has no valid data rows."] };
+  if (!validRows.length) return { ok: false, errors: ["The spreadsheet has no valid data rows."] };
+
+  const factor = await getScope2Factor(year, ctx.source);
+  const factorValue = factor?.value ?? null;
+
+  const records: Scope2Record[] = validRows.map((item) => ({
+    electricitySource: item.source,
+    kWh: item.kWh,
+    emissionFactor: factorValue,
+    emissionFactorUnit: factor?.unit ?? "",
+    emissionFactorSource: factor
+      ? `${factor.publisher} ${factor.year} — ${factor.document}`
+      : "Emission factor unavailable",
+    emissions: factorValue === null ? null : item.kWh * factorValue,
+    reportingYear: ctx.reportingYear,
+    facilityId: ctx.facilityId,
+    facilityName: ctx.facilityName,
+  }));
+
   return { ok: true, records };
 }

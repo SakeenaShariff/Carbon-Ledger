@@ -7,20 +7,12 @@ import { useState } from "react";
 const links = [
   { href: "/upload", label: "Upload" },
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/profile", label: "Profile" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
-
-  async function logout() {
-    setLoggingOut(true);
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
-  }
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -43,10 +35,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {link.label}
             </Link>
           ))}
-
-          <button className="w-full rounded-2xl px-4 py-3 text-left text-ink hover:bg-canvas" onClick={logout} disabled={loggingOut}>
-            {loggingOut ? "Signing out…" : "Logout"}
-          </button>
         </div>
       ) : null}
 
@@ -71,16 +59,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </Link>
               ))}
             </nav>
-
-            <div className="mt-auto space-y-4">
-              <button
-                className="w-full rounded-2xl px-4 py-3 text-left text-muted hover:bg-canvas hover:text-ink transition"
-                onClick={logout}
-                disabled={loggingOut}
-              >
-                {loggingOut ? "Signing out…" : "Logout"}
-              </button>
-            </div>
           </div>
         </aside>
 
